@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a computer learns to sort colored dots</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" id="fontCss" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=swap">
+<style>
+:root{
+  --paper:#F4F7FB; --grid:#E2E8F1; --card:#FFFFFF; --tile:#EFF3F8;
+  --ink:#15243B; --muted:#56637A; --line:#C8D2E0;
+  --hi:#FFD23F; --on-hi:#15243B;
+  --a:#E07B00; --b:#2F64E0; --no:#B9C4D4;
+  --good:#16875A; --bad:#D23C44;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#111B19; --grid:#192724; --card:#172421; --tile:#1F2F2B;
+    --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D;
+    --hi:#FFD23F; --on-hi:#111B19;
+    --a:#FF9A3D; --b:#6F9BFF; --no:#587269;
+    --good:#4CC38A; --bad:#FF7070;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111B19; --grid:#192724; --card:#172421; --tile:#1F2F2B;
+  --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D;
+  --hi:#FFD23F; --on-hi:#111B19;
+  --a:#FF9A3D; --b:#6F9BFF; --no:#587269;
+  --good:#4CC38A; --bad:#FF7070;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;color:var(--ink);background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:28px 28px;
+  font:400 17px/1.55 "Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:clamp(24px,5vw,56px) clamp(14px,4vw,32px) 64px}
+h1,h2,h3,h4{font-family:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;color:var(--ink)}
+h1{font-weight:800;font-size:clamp(2.2rem,5.6vw,3.9rem);line-height:1.02;letter-spacing:-0.03em;margin:0 0 18px;max-width:16ch}
+h2{font-weight:800;font-size:clamp(1.45rem,3vw,1.9rem);line-height:1.12;letter-spacing:-0.02em;margin:0 0 6px}
+h3{font-weight:800;font-size:1.15rem;line-height:1.25;margin:0}
+p{margin:0}
+.lede{font-size:clamp(1.08rem,2vw,1.25rem);max-width:58ch;color:var(--muted)}
+.muted{color:var(--muted)}
+.small{font-size:.93rem;line-height:1.45}
+:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+.n{display:inline-grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;
+  background:var(--hi);color:var(--on-hi);font:800 1.05rem/1 "Bricolage Grotesque",system-ui,sans-serif}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:clamp(16px,3vw,30px);margin-top:26px}
+
+/* lab layout */
+.lab{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:clamp(20px,3vw,36px);align-items:start}
+.side{display:flex;flex-direction:column;gap:26px}
+.step-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.puzzles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pz{appearance:none;font:inherit;color:var(--ink);background:var(--tile);border:2px solid transparent;border-radius:12px;padding:6px 6px 8px;cursor:pointer;text-align:center}
+.pz canvas{width:100%;aspect-ratio:1;display:block;border-radius:8px;background:var(--card)}
+.pz span{display:block;font-weight:700;font-size:.86rem;line-height:1.2;margin-top:6px}
+.pz[aria-pressed="true"]{border-color:var(--ink);background:var(--card)}
+.toggle{display:inline-flex;gap:8px;align-items:center;cursor:pointer;color:var(--muted);margin-top:12px}
+.toggle input{width:18px;height:18px;accent-color:var(--ink)}
+.brains{display:flex;flex-direction:column;gap:6px}
+.br{appearance:none;font:inherit;color:var(--ink);text-align:left;background:var(--tile);border:2px solid transparent;border-radius:12px;padding:9px 12px;cursor:pointer}
+.br b{display:block}
+.br small{display:block;color:var(--muted);font-size:.88rem;line-height:1.35}
+.br[aria-pressed="true"]{border-color:var(--ink);background:var(--card)}
+#netCv{width:100%;height:170px;display:block;margin-top:10px}
+.net-key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.85rem;color:var(--muted)}
+.net-key i{display:inline-block;width:16px;height:0;border-top:3px solid;vertical-align:4px;margin-right:6px}
+.controls{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:700 1rem/1 "Atkinson Hyperlegible",system-ui,sans-serif;padding:12px 18px;border-radius:12px;border:2px solid var(--ink);background:var(--ink);color:var(--card);cursor:pointer}
+.btn.secondary{background:transparent;color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.reset-note{margin-top:10px}
+.paint{margin-top:16px}
+.paint .seg{margin-top:8px}
+.paint .linkbtn{display:block;margin-top:6px}
+.n-key[hidden]{display:none}
+
+.main{min-width:0}
+.map-wrap{position:relative;max-width:620px}
+#map{width:100%;aspect-ratio:1;display:block;border-radius:16px;border:1px solid var(--line);touch-action:none;cursor:crosshair;background:var(--tile)}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:12px;max-width:620px}
+.seg{display:inline-flex;border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+.seg button{appearance:none;font:700 .95rem/1 "Atkinson Hyperlegible",system-ui,sans-serif;color:var(--ink);background:transparent;border:0;padding:10px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.seg button + button{border-left:2px solid var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--card)}
+.dot-a,.dot-b{display:inline-block;width:12px;height:12px;flex:none}
+.dot-a{border-radius:50%;background:var(--a)}
+.dot-b{border-radius:2px;background:var(--b)}
+.linkbtn{appearance:none;font:inherit;font-size:.93rem;background:none;border:0;padding:4px 2px;color:var(--muted);text-decoration:underline;cursor:pointer}
+.readout{margin-top:10px;min-height:1.6em;font-weight:700;max-width:620px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;color:var(--muted);font-size:.9rem;max-width:620px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.hollow-a{display:inline-block;width:12px;height:12px;border-radius:50%;border:2.5px solid var(--a)}
+.hollow-b{display:inline-block;width:12px;height:12px;border-radius:2px;border:2.5px solid var(--b)}
+.bline{display:inline-block;width:18px;border-top:3px solid var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 22px;margin-top:22px;max-width:620px}
+.stat b{display:block;font:800 clamp(1.6rem,3.6vw,2.3rem)/1 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-0.02em}
+.stat small{display:block;color:var(--muted);font-size:.88rem;line-height:1.35;margin-top:5px}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px;max-width:620px}
+.charts canvas{width:100%;height:140px;display:block}
+.charts h4{font:800 1rem/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 4px}
+.charts .k{font-size:.82rem;color:var(--muted);margin-bottom:4px}
+.charts .k i{display:inline-block;width:14px;border-top:3px solid var(--ink);vertical-align:4px;margin-right:5px}
+.charts .k i.dash{border-top-style:dashed}
+
+/* inside */
+.inside p.muted{max-width:70ch;margin-top:6px}
+.layer{margin-top:20px}
+.layer h4{font:800 1rem/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 8px}
+.neurons{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;max-width:980px}
+.neurons figure{margin:0}
+.neurons canvas{width:100%;aspect-ratio:1;display:block;border-radius:8px}
+.neurons figcaption{font-size:.8rem;color:var(--muted);text-align:center;margin-top:3px}
+.n-key{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:14px;color:var(--muted);font-size:.9rem}
+.n-key i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.empty{padding:12px 16px;border-radius:12px;background:var(--tile);border-left:5px solid var(--hi);margin-top:16px;max-width:70ch}
+.try-list{margin:12px 0 0;padding-left:1.3em;max-width:72ch}
+.try-list li{margin:8px 0}
+footer{margin-top:26px;color:var(--muted);font-size:.95rem;max-width:72ch}
+
+@media (max-width:860px){
+  .lab{grid-template-columns:minmax(0,1fr)}
+  .side{order:0}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:480px){
+  .charts{grid-template-columns:minmax(0,1fr)}
+  .seg button{padding:10px 9px;font-size:.9rem}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>How a computer learns to sort colored dots</h1>
+    <p class="lede">Orange and blue dots are scattered on a map. The computer only knows two numbers for each dot: how far right it is and how far up it is. Can it learn where orange ends and blue begins?</p>
+  </header>
+
+  <section class="panel lab">
+    <div class="side">
+      <div>
+        <div class="step-head"><span class="n">1</span><h2>Pick a puzzle</h2></div>
+        <div class="puzzles" id="puzzles"></div>
+        <label class="toggle"><input type="checkbox" id="messy"> Messy dots</label>
+        <div class="paint">
+          <p class="small muted">Add your own dots: pick a color, then drag across the map. Tap the color again to stop.</p>
+          <div class="seg" role="group" aria-label="Add dots">
+            <button type="button" data-tool="a" aria-pressed="false"><span class="dot-a"></span>Add orange</button>
+            <button type="button" data-tool="b" aria-pressed="false"><span class="dot-b"></span>Add blue</button>
+          </div>
+          <button class="linkbtn" id="clearDots" type="button">Remove dots I added</button>
+        </div>
+      </div>
+      <div>
+        <div class="step-head"><span class="n">2</span><h2>Pick a brain</h2></div>
+        <div class="brains" id="brains"></div>
+        <canvas id="netCv" aria-label="Diagram of the chosen network"></canvas>
+        <div class="net-key"><span><i style="border-color:var(--hi)"></i>Pushes the next neuron up</span><span><i style="border-color:var(--no)"></i>Pushes it down</span></div>
+      </div>
+      <div>
+        <div class="step-head"><span class="n">3</span><h2>Train it</h2></div>
+        <div class="controls">
+          <button class="btn" id="trainBtn" type="button">Start training</button>
+          <button class="btn secondary" id="stepBtn" type="button">One step</button>
+          <button class="btn secondary" id="resetBtn" type="button">Start over</button>
+        </div>
+        <label class="toggle"><input type="checkbox" id="slow"> Slow motion</label>
+        <p class="small muted reset-note">Changing the puzzle or the brain starts the training over.</p>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="map-wrap">
+        <canvas id="map" aria-label="Map of dots. The background color shows what the computer thinks belongs to each color."></canvas>
+      </div>
+      <div class="tools">
+        <div class="seg" role="group" aria-label="What clicking the map does">
+          <button type="button" data-tool="ask" aria-pressed="true">Ask with question marks</button>
+        </div>
+        <button class="linkbtn" id="clearPins" type="button">Remove question marks</button>
+      </div>
+      <p class="readout" id="readout" aria-live="polite">Point at the map to see what it thinks about that spot.</p>
+      <div class="legend">
+        <span><span class="dot-a"></span><span class="dot-b"></span>Practice dots it learns from</span>
+        <span><span class="hollow-a"></span><span class="hollow-b"></span>Test dots it never trains on</span>
+        <span><span class="bline"></span>Where it switches from orange to blue</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="sTrain">–</b><small>Practice dots it gets right</small></div>
+        <div class="stat"><b id="sTest">–</b><small>Test dots it gets right</small></div>
+        <div class="stat"><b id="sSteps">0</b><small>Practice steps</small></div>
+        <div class="stat"><b id="sLoss">–</b><small>How wrong it is (0 is perfect)</small></div>
+      </div>
+      <div class="charts">
+        <div><h4>Score</h4><p class="k"><i></i>Practice dots <i class="dash" style="margin-left:10px"></i>Test dots</p><canvas id="accChart" aria-label="Score over practice time"></canvas></div>
+        <div><h4>How wrong it is</h4><p class="k">Lower is better</p><canvas id="lossChart" aria-label="Error over practice time"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel inside">
+    <h2>Inside the brain</h2>
+    <p class="muted">Each small map shows where one neuron fires. A neuron in the first layer can only split the map with one straight line. The layers after it mix those straight lines together, and that’s how the answer gets curves.</p>
+    <div id="layers"></div>
+    <p class="empty" id="noNeurons" hidden>This brain has no neurons in the middle, so the answer can only ever be one straight line across the map. Try the Circle puzzle with it, then switch to 4 neurons.</p>
+    <div class="n-key" id="nKey"><span><i style="background:var(--hi)"></i>Neuron fires here</span><span><i style="background:var(--no)"></i>Neuron stays quiet here</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Things to try</h2>
+    <ul class="try-list">
+      <li>Pick <b>Circle</b> with <b>Just a straight line</b>. Why does it get stuck? Then give it <b>4 neurons</b>. Can you spot the straight lines it uses to build the circle?</li>
+      <li><b>Spiral</b> is the hardest puzzle. Which brain can solve it, and how many steps does it take?</li>
+      <li>Turn on <b>Messy dots</b>. Why can’t it get every practice dot right? Is that a bad thing?</li>
+      <li>Add a few orange dots deep inside blue territory. Does the map bend to grab them? What happens to the test score?</li>
+      <li>Click a few question marks onto the map, then press <b>Start over</b> and train again. Does it give the same answers every time?</li>
+    </ul>
+  </section>
+
+  <footer>The brain is a small neural network written in plain JavaScript and trained right in your browser. Its only inputs are each dot’s left–right and up–down position.</footer>
+</main>
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+const rand = (a, b) => a + Math.random() * (b - a);
+function randn() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function hexToRgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const fmtInt = n => n.toLocaleString('en-US');
+const rafNative = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
+const tick = cb => { let done = false; const go = () => { if (!done) { done = true; cb(); } }; if (rafNative) rafNative(go); setTimeout(go, 50); };
+const fontLink = document.getElementById('fontCss');
+if (fontLink) { const on = () => { fontLink.media = 'all'; }; fontLink.addEventListener('load', on); if (fontLink.sheet) on(); setTimeout(on, 3000); }
+
+/* ---------------- The network ---------------- */
+class MLP {
+  constructor(hidden) {
+    this.sizes = [2, ...hidden, 1];
+    this.W = []; this.b = []; this.gW = []; this.gb = []; this.mW = []; this.vW = []; this.mb = []; this.vb = [];
+    for (let l = 0; l < this.sizes.length - 1; l++) {
+      const nin = this.sizes[l], nout = this.sizes[l + 1];
+      const W = new Float64Array(nout * nin), s = Math.sqrt(1 / nin) * (l === 0 ? 1.6 : 1.1);
+      for (let k = 0; k < W.length; k++) W[k] = randn() * s;
+      const b = new Float64Array(nout);
+      if (l === 0) for (let k = 0; k < nout; k++) b[k] = rand(-0.4, 0.4);
+      this.W.push(W); this.b.push(b);
+      this.gW.push(new Float64Array(W.length)); this.gb.push(new Float64Array(nout));
+      this.mW.push(new Float64Array(W.length)); this.vW.push(new Float64Array(W.length));
+      this.mb.push(new Float64Array(nout)); this.vb.push(new Float64Array(nout));
+    }
+    this.acts = this.sizes.map(n => new Float64Array(n));
+    this.deltas = this.sizes.map(n => new Float64Array(n));
+    this.t = 0; this.lr = 0.03;
+  }
+  forward(x, y) {
+    const A = this.acts; A[0][0] = x; A[0][1] = y;
+    const L = this.sizes.length - 1;
+    for (let l = 0; l < L; l++) {
+      const nin = this.sizes[l], nout = this.sizes[l + 1], W = this.W[l], b = this.b[l], a = A[l], o = A[l + 1];
+      for (let j = 0; j < nout; j++) {
+        let z = b[j]; const r = j * nin;
+        for (let i = 0; i < nin; i++) z += W[r + i] * a[i];
+        o[j] = l === L - 1 ? 1 / (1 + Math.exp(-z)) : Math.tanh(z);
+      }
+    }
+    return A[L][0];
+  }
+  trainStep(pts) {
+    const L = this.sizes.length - 1;
+    for (let l = 0; l < L; l++) { this.gW[l].fill(0); this.gb[l].fill(0); }
+    let loss = 0;
+    for (const p of pts) {
+      const out = this.forward(p.x, p.y);
+      loss -= p.c ? Math.log(out + 1e-9) : Math.log(1 - out + 1e-9);
+      this.deltas[L][0] = out - p.c;
+      for (let l = L - 1; l >= 0; l--) {
+        const nin = this.sizes[l], nout = this.sizes[l + 1], W = this.W[l], d = this.deltas[l + 1], a = this.acts[l], gW = this.gW[l], gb = this.gb[l];
+        for (let j = 0; j < nout; j++) { gb[j] += d[j]; const r = j * nin; for (let i = 0; i < nin; i++) gW[r + i] += d[j] * a[i]; }
+        if (l > 0) {
+          const dp = this.deltas[l];
+          for (let i = 0; i < nin; i++) { let s = 0; for (let j = 0; j < nout; j++) s += W[j * nin + i] * d[j]; dp[i] = s * (1 - a[i] * a[i]); }
+        }
+      }
+    }
+    const N = pts.length; this.t++;
+    const b1 = 0.9, b2 = 0.999, bc1 = 1 - Math.pow(b1, this.t), bc2 = 1 - Math.pow(b2, this.t);
+    const upd = (P, G, M, V) => {
+      for (let k = 0; k < P.length; k++) {
+        const g = G[k] / N;
+        M[k] = b1 * M[k] + (1 - b1) * g; V[k] = b2 * V[k] + (1 - b2) * g * g;
+        P[k] -= this.lr * (M[k] / bc1) / (Math.sqrt(V[k] / bc2) + 1e-8);
+      }
+    };
+    for (let l = 0; l < L; l++) { upd(this.W[l], this.gW[l], this.mW[l], this.vW[l]); upd(this.b[l], this.gb[l], this.mb[l], this.vb[l]); }
+    return loss / N;
+  }
+}
+
+/* ---------------- Puzzles ---------------- */
+const PUZZLES = [
+  { id: 'groups', name: 'Two groups' },
+  { id: 'circle', name: 'Circle' },
+  { id: 'corners', name: 'Four corners' },
+  { id: 'spiral', name: 'Spiral' },
+  { id: 'own', name: 'Your own' },
+];
+const BRAINS = [
+  { id: 'line', name: 'Just a straight line', desc: 'No neurons in the middle', hidden: [] },
+  { id: 'n4', name: '4 neurons', desc: 'One layer of 4', hidden: [4] },
+  { id: 'n8', name: '8 neurons', desc: 'One layer of 8', hidden: [8] },
+  { id: 'deep', name: 'Two layers of 8', desc: '8 neurons, then 8 more', hidden: [8, 8] },
+];
+const clamp = v => Math.max(-0.97, Math.min(0.97, v));
+
+function makePuzzle(id, messy) {
+  const pts = [], jit = messy ? 0.12 : 0;
+  const add = (x, y, c) => pts.push({ x: clamp(x + randn() * jit), y: clamp(y + randn() * jit), c, test: Math.random() < 0.3 });
+  if (id === 'groups') {
+    for (let i = 0; i < 100; i++) add(-0.42 + randn() * 0.2, -0.35 + randn() * 0.2, 1);
+    for (let i = 0; i < 100; i++) add(0.42 + randn() * 0.2, 0.35 + randn() * 0.2, 0);
+  } else if (id === 'circle') {
+    for (let i = 0; i < 110; i++) { const r = Math.sqrt(Math.random()) * 0.42, t = Math.random() * 6.283; add(r * Math.cos(t), r * Math.sin(t), 1); }
+    for (let i = 0; i < 130; i++) { const r = rand(0.6, 0.92), t = Math.random() * 6.283; add(r * Math.cos(t), r * Math.sin(t), 0); }
+  } else if (id === 'corners') {
+    for (let i = 0; i < 240; i++) {
+      let x = rand(-0.92, 0.92), y = rand(-0.92, 0.92);
+      x += x > 0 ? 0.06 : -0.06; y += y > 0 ? 0.06 : -0.06;
+      add(x, y, x * y > 0 ? 1 : 0);
+    }
+  } else if (id === 'spiral') {
+    for (let c = 0; c < 2; c++) for (let i = 0; i < 130; i++) {
+      const r = (i / 130) * 0.9 + 0.04, t = 1.75 * i / 130 * 2 * Math.PI + c * Math.PI;
+      add(r * Math.sin(t) + randn() * 0.02, r * Math.cos(t) + randn() * 0.02, c === 0 ? 1 : 0);
+    }
+  }
+  if (messy) for (const p of pts) if (Math.random() < 0.06) p.c = 1 - p.c;
+  return pts;
+}
+
+/* ---------------- State ---------------- */
+let puzzle = 'groups', brain = 'line', messy = false, tool = 'ask';
+let pts = [], net = null, training = false, steps = 0, frame = 0;
+let lossHist = [], accTrainHist = [], accTestHist = [], lastLoss = null;
+let pins = [], hover = null;
+const G = 64; // map resolution
+const grid = new Float64Array((G + 1) * (G + 1));
+
+function newNet() {
+  net = new MLP(BRAINS.find(b => b.id === brain).hidden);
+  steps = 0; lossHist = []; accTrainHist = []; accTestHist = []; lastLoss = null;
+  recordScores();
+  buildNeuronMaps();
+}
+function newPuzzle() {
+  pts = makePuzzle(puzzle, messy);
+  pins = [];
+  newNet();
+}
+const practice = () => pts.filter(p => !p.test);
+
+function scores() {
+  let tr = 0, trn = 0, te = 0, ten = 0, loss = 0;
+  for (const p of pts) {
+    const o = net.forward(p.x, p.y), ok = (o > 0.5 ? 1 : 0) === p.c;
+    if (p.test) { ten++; if (ok) te++; }
+    else { trn++; if (ok) tr++; loss -= p.c ? Math.log(o + 1e-9) : Math.log(1 - o + 1e-9); }
+  }
+  return { train: trn ? tr / trn : null, test: ten ? te / ten : null, loss: trn ? loss / trn : null };
+}
+function recordScores() {
+  const s = scores();
+  if (s.train != null) accTrainHist.push(s.train * 100);
+  if (s.test != null) accTestHist.push(s.test * 100);
+  if (s.loss != null) { lossHist.push(s.loss); lastLoss = s.loss; }
+  const pc = v => (v == null ? '–' : Math.round(v * 100) + '%');
+  $('#sTrain').textContent = pc(s.train);
+  $('#sTest').textContent = pc(s.test);
+  $('#sSteps').textContent = fmtInt(steps);
+  $('#sLoss').textContent = s.loss == null ? '–' : s.loss.toFixed(2);
+}
+function doStep() {
+  const tr = practice();
+  if (!tr.length) return false;
+  net.trainStep(tr); steps++;
+  if (steps % 5 === 0 || steps < 20) recordScores();
+  return true;
+}
+
+/* ---------------- Drawing ---------------- */
+function sizeCanvas(cv) {
+  const r = dpr(), W = cv.clientWidth, H = cv.clientHeight;
+  const w = Math.max(1, Math.round(W * r)), h = Math.max(1, Math.round(H * r));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext('2d'); ctx.setTransform(r, 0, 0, r, 0, 0);
+  return [ctx, W, H];
+}
+const toPx = (v, W) => (v + 1) / 2 * W;
+const toPy = (v, W) => (1 - v) / 2 * W;
+
+function drawShape(ctx, x, y, c, test, s, colA, colB, edge) {
+  ctx.beginPath();
+  if (c) ctx.arc(x, y, s, 0, Math.PI * 2);
+  else ctx.rect(x - s * 0.9, y - s * 0.9, s * 1.8, s * 1.8);
+  if (test) { ctx.lineWidth = 2.4; ctx.strokeStyle = c ? colA : colB; ctx.fillStyle = edge; ctx.fill(); ctx.stroke(); }
+  else { ctx.fillStyle = c ? colA : colB; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = edge; ctx.stroke(); }
+}
+
+const mapImg = document.createElement('canvas'); mapImg.width = mapImg.height = G + 1;
+function drawMap() {
+  const cv = $('#map');
+  const [ctx, W] = sizeCanvas(cv);
+  if (W < 40) return;
+  ctx.clearRect(0, 0, W, W);
+  const tile = hexToRgb(css('--tile')), A = hexToRgb(css('--a')), B = hexToRgb(css('--b'));
+  const colA = css('--a'), colB = css('--b'), ink = css('--ink'), card = css('--card');
+  // prediction field
+  const mctx = mapImg.getContext('2d'), img = mctx.createImageData(G + 1, G + 1), d = img.data;
+  for (let r = 0; r <= G; r++) for (let q = 0; q <= G; q++) {
+    const x = -1 + 2 * q / G, y = 1 - 2 * r / G;
+    const o = net.forward(x, y); grid[r * (G + 1) + q] = o;
+    const c = o > 0.5 ? A : B, a = Math.min(1, Math.abs(o - 0.5) * 2) * 0.55;
+    const k = (r * (G + 1) + q) * 4;
+    d[k] = tile[0] + (c[0] - tile[0]) * a; d[k + 1] = tile[1] + (c[1] - tile[1]) * a; d[k + 2] = tile[2] + (c[2] - tile[2]) * a; d[k + 3] = 255;
+  }
+  mctx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(0, 0, W, W, 15) : ctx.rect(0, 0, W, W); ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  const cell = W / G;
+  ctx.drawImage(mapImg, -cell / 2, -cell / 2, W + cell, W + cell);
+  // axes
+  ctx.strokeStyle = css('--line'); ctx.lineWidth = 1; ctx.setLineDash([4, 5]);
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, W); ctx.moveTo(0, W / 2); ctx.lineTo(W, W / 2); ctx.stroke();
+  ctx.setLineDash([]);
+  // boundary (marching squares at 0.5)
+  ctx.strokeStyle = ink; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.beginPath();
+  const v = (r, q) => grid[r * (G + 1) + q] - 0.5;
+  for (let r = 0; r < G; r++) for (let q = 0; q < G; q++) {
+    const a = v(r, q), b = v(r, q + 1), c = v(r + 1, q + 1), e = v(r + 1, q);
+    const P = [];
+    if ((a > 0) !== (b > 0)) P.push([q + a / (a - b), r]);
+    if ((b > 0) !== (c > 0)) P.push([q + 1, r + b / (b - c)]);
+    if ((e > 0) !== (c > 0)) P.push([q + e / (e - c), r + 1]);
+    if ((a > 0) !== (e > 0)) P.push([q, r + a / (a - e)]);
+    for (let k = 0; k + 1 < P.length; k += 2) { ctx.moveTo(P[k][0] * cell, P[k][1] * cell); ctx.lineTo(P[k + 1][0] * cell, P[k + 1][1] * cell); }
+  }
+  ctx.stroke();
+  // dots
+  const s = Math.max(3.5, W / 110);
+  for (const p of pts) drawShape(ctx, toPx(p.x, W), toPy(p.y, W), p.c, p.test, s, colA, colB, card);
+  // axis words
+  ctx.fillStyle = css('--muted'); ctx.font = `700 ${W < 400 ? 11 : 13}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('right', W - 8, W / 2 - 4);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('up', W / 2 + 6, 8);
+  // pins
+  for (const pin of pins) drawPin(ctx, pin, W);
+  if (hover && tool === 'ask') {
+    ctx.beginPath(); ctx.arc(toPx(hover.x, W), toPy(hover.y, W), 9, 0, Math.PI * 2);
+    ctx.lineWidth = 2; ctx.strokeStyle = ink; ctx.stroke();
+  }
+  if (!pts.length) {
+    ctx.fillStyle = css('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${W < 400 ? 15 : 18}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+    ctx.fillText('Pick Add orange or Add blue,', W / 2, W / 2 - 14);
+    ctx.fillText('then drag across the map', W / 2, W / 2 + 14);
+  }
+  ctx.restore();
+}
+function drawPin(ctx, pin, W) {
+  const o = net.forward(pin.x, pin.y), isA = o > 0.5, sure = Math.round((isA ? o : 1 - o) * 100);
+  const x = toPx(pin.x, W), y = toPy(pin.y, W), r = 13;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = css('--hi'); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = css('--ink'); ctx.stroke();
+  ctx.fillStyle = css('--on-hi'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '800 15px "Bricolage Grotesque", system-ui, sans-serif'; ctx.fillText('?', x, y + 1);
+  const label = `${sure}% ${isA ? 'orange' : 'blue'}`;
+  ctx.font = '700 13px "Atkinson Hyperlegible", system-ui, sans-serif';
+  const tw = ctx.measureText(label).width, lx = Math.min(W - tw - 14, x + r + 4), ly = y;
+  ctx.fillStyle = css('--card'); ctx.globalAlpha = 0.92;
+  ctx.fillRect(lx - 4, ly - 10, tw + 8, 20); ctx.globalAlpha = 1;
+  ctx.fillStyle = isA ? css('--a') : css('--b'); ctx.textAlign = 'left';
+  ctx.fillText(label, lx, ly + 1);
+}
+
+function drawNetDiagram() {
+  const cv = $('#netCv');
+  const [ctx, W, H] = sizeCanvas(cv);
+  if (W < 60 || H < 60) return;
+  ctx.clearRect(0, 0, W, H);
+  const sizes = net.sizes, L = sizes.length;
+  const padX = 48, padY = 22;
+  const xs = sizes.map((_, l) => padX + (W - 2 * padX - 30) * (l / (L - 1)));
+  const pos = sizes.map((n, l) => Array.from({ length: n }, (_, j) => [xs[l], n === 1 ? H / 2 : padY + (H - 2 * padY) * (j / (n - 1))]));
+  const hi = css('--hi'), no = css('--no'), ink = css('--ink'), card = css('--card'), muted = css('--muted');
+  let wmax = 1e-6;
+  for (const W_ of net.W) for (let k = 0; k < W_.length; k++) wmax = Math.max(wmax, Math.abs(W_[k]));
+  for (let l = 0; l < L - 1; l++) {
+    const nin = sizes[l], nout = sizes[l + 1];
+    for (let j = 0; j < nout; j++) for (let i = 0; i < nin; i++) {
+      const w = net.W[l][j * nin + i], rel = Math.abs(w) / wmax;
+      ctx.strokeStyle = w > 0 ? hi : no; ctx.lineWidth = 0.5 + rel * 3.5; ctx.globalAlpha = 0.35 + rel * 0.65;
+      ctx.beginPath(); ctx.moveTo(pos[l][i][0], pos[l][i][1]); ctx.lineTo(pos[l + 1][j][0], pos[l + 1][j][1]); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  const r = Math.max(3, Math.min(9, (H - 2 * padY) / Math.max(...sizes) / 2.4));
+  for (let l = 0; l < L; l++) for (const [x, y] of pos[l]) {
+    ctx.beginPath(); ctx.arc(x, y, l === 0 || l === L - 1 ? 9 : r, 0, Math.PI * 2);
+    ctx.fillStyle = card; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = ink; ctx.stroke();
+  }
+  ctx.fillStyle = muted; ctx.font = '700 12px "Atkinson Hyperlegible", system-ui, sans-serif'; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  ctx.fillText('right', pos[0][0][0] - 13, pos[0][0][1]);
+  ctx.fillText('up', pos[0][1][0] - 13, pos[0][1][1]);
+  ctx.textAlign = 'left';
+  ctx.fillText('answer', pos[L - 1][0][0] + 13, pos[L - 1][0][1]);
+}
+
+function drawChart(cv, series, o) {
+  const [ctx, W, H] = sizeCanvas(cv);
+  if (W < 40) return;
+  ctx.clearRect(0, 0, W, H);
+  const padL = 34, padR = 8, padT = 8, padB = 18, pw = W - padL - padR, ph = H - padT - padB;
+  const Y = v => padT + ph * (1 - (Math.min(o.max, Math.max(o.min, v)) - o.min) / (o.max - o.min));
+  ctx.font = '12px "Atkinson Hyperlegible", system-ui, sans-serif'; ctx.fillStyle = css('--muted'); ctx.strokeStyle = css('--line'); ctx.lineWidth = 1;
+  for (const t of o.ticks) {
+    const y = Math.round(Y(t)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(o.fmt(t), padL - 6, y);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText('Practice time', padL, H - 3);
+  for (const s of series) {
+    const data = s.data; if (!data.length) continue;
+    const n = Math.max(data.length - 1, 1), X = i => padL + pw * (i / n);
+    ctx.beginPath(); data.forEach((v, i) => (i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))));
+    ctx.setLineDash(s.dash ? [6, 5] : []); ctx.strokeStyle = s.color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+function drawCharts() {
+  drawChart($('#accChart'), [{ data: accTrainHist, color: css('--ink') }, { data: accTestHist, color: css('--ink'), dash: true }],
+    { min: 0, max: 100, ticks: [0, 50, 100], fmt: t => t + '%' });
+  const lm = Math.max(1, ...lossHist.slice(0, 3));
+  drawChart($('#lossChart'), [{ data: lossHist, color: css('--b') }], { min: 0, max: lm, ticks: [0, +(lm / 2).toFixed(1), +lm.toFixed(1)], fmt: t => String(t) });
+}
+
+/* ---------------- Inside the brain ---------------- */
+const NG = 30;
+let neuronCvs = [];
+function buildNeuronMaps() {
+  const wrap = $('#layers'); wrap.innerHTML = ''; neuronCvs = [];
+  const hidden = net.sizes.slice(1, -1);
+  $('#noNeurons').hidden = hidden.length > 0;
+  $('#nKey').hidden = hidden.length === 0;
+  hidden.forEach((n, l) => {
+    const sec = document.createElement('div'); sec.className = 'layer';
+    const h = document.createElement('h4');
+    h.textContent = l === 0 ? `First layer: ${n} neurons, each one a straight line` : `Second layer: ${n} neurons, mixing the lines from the first layer`;
+    const g = document.createElement('div'); g.className = 'neurons';
+    const row = [];
+    for (let j = 0; j < n; j++) {
+      const f = document.createElement('figure'), cv = document.createElement('canvas'), c = document.createElement('figcaption');
+      cv.width = cv.height = NG; c.textContent = `Neuron ${j + 1}`;
+      f.append(cv, c); g.appendChild(f); row.push(cv);
+    }
+    sec.append(h, g); wrap.appendChild(sec); neuronCvs.push(row);
+  });
+}
+function paintNeurons() {
+  if (!neuronCvs.length) return;
+  const yes = hexToRgb(css('--hi')), no = hexToRgb(css('--no'));
+  const imgs = neuronCvs.map(row => row.map(cv => { const ctx = cv.getContext('2d'); return [ctx, ctx.createImageData(NG, NG)]; }));
+  for (let r = 0; r < NG; r++) for (let q = 0; q < NG; q++) {
+    net.forward(-1 + 2 * (q + 0.5) / NG, 1 - 2 * (r + 0.5) / NG);
+    const k = (r * NG + q) * 4;
+    for (let l = 0; l < neuronCvs.length; l++) {
+      const a = net.acts[l + 1];
+      for (let j = 0; j < a.length; j++) {
+        const t = (a[j] + 1) / 2, d = imgs[l][j][1].data;
+        d[k] = no[0] + (yes[0] - no[0]) * t; d[k + 1] = no[1] + (yes[1] - no[1]) * t; d[k + 2] = no[2] + (yes[2] - no[2]) * t; d[k + 3] = 255;
+      }
+    }
+  }
+  imgs.forEach(row => row.forEach(([ctx, img]) => ctx.putImageData(img, 0, 0)));
+}
+
+/* ---------------- Render + loop ---------------- */
+let lastSide = 0;
+function render(force) {
+  drawMap(); drawCharts();
+  const now = performance.now();
+  if (force || now - lastSide > 120) { lastSide = now; drawNetDiagram(); paintNeurons(); }
+  updateReadout();
+}
+function loop() {
+  if (!training) return;
+  frame++;
+  const slow = $('#slow').checked;
+  const n = slow ? (frame % 6 === 0 ? 1 : 0) : 8;
+  for (let i = 0; i < n; i++) if (!doStep()) { stop(); break; }
+  if (n) render();
+  if (training) tick(loop);
+}
+function start() {
+  if (!practice().length) { $('#readout').textContent = 'Add some dots first. Pick Add orange or Add blue in step 1, then drag across the map.'; return; }
+  training = true; updateButtons(); tick(loop);
+}
+function stop() { training = false; recordScores(); render(true); updateButtons(); }
+function updateButtons() {
+  $('#trainBtn').textContent = training ? 'Pause' : steps ? 'Keep training' : 'Start training';
+  $('#stepBtn').disabled = training;
+}
+
+/* ---------------- Map interaction ---------------- */
+function mapPoint(e) {
+  const r = $('#map').getBoundingClientRect();
+  return { x: clamp(((e.clientX - r.left) / r.width) * 2 - 1), y: clamp(1 - ((e.clientY - r.top) / r.height) * 2) };
+}
+function updateReadout() {
+  if (tool !== 'ask' || !hover) return;
+  const o = net.forward(hover.x, hover.y), isA = o > 0.5, sure = Math.round((isA ? o : 1 - o) * 100);
+  $('#readout').textContent = sure < 60
+    ? `At this spot it’s unsure: ${sure}% ${isA ? 'orange' : 'blue'}.`
+    : `At this spot it says ${isA ? 'orange' : 'blue'}, ${sure}% sure.`;
+}
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
+  const col = t === 'a' ? 'orange' : 'blue';
+  $('#readout').textContent = t === 'ask' ? 'Point at the map to see what it thinks. Click to leave a question mark.' : `Drag across the map to paint ${col} dots. About 1 in 4 becomes a hollow test dot. Tap Add ${col} again to stop.`;
+  drawMap();
+}
+
+/* ---------------- Build UI ---------------- */
+function previewPuzzle(cv, id) {
+  const ctx = cv.getContext('2d'), W = cv.width;
+  ctx.clearRect(0, 0, W, W);
+  if (id === 'own') {
+    ctx.fillStyle = css('--muted'); ctx.font = `800 ${W * 0.4}px "Bricolage Grotesque", system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('+', W / 2, W / 2 + 2); return;
+  }
+  const sample = makePuzzle(id, false), colA = css('--a'), colB = css('--b');
+  for (const p of sample) { ctx.beginPath(); ctx.arc(toPx(p.x, W), toPy(p.y, W), W / 40, 0, Math.PI * 2); ctx.fillStyle = p.c ? colA : colB; ctx.fill(); }
+}
+function buildPickers() {
+  const pw = $('#puzzles');
+  for (const p of PUZZLES) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pz'; b.dataset.id = p.id;
+    b.setAttribute('aria-pressed', String(p.id === puzzle));
+    const cv = document.createElement('canvas'); cv.width = cv.height = 120; cv.setAttribute('aria-hidden', 'true');
+    const s = document.createElement('span'); s.textContent = p.name;
+    b.append(cv, s); pw.appendChild(b);
+    b.addEventListener('click', () => {
+      puzzle = p.id;
+      pw.querySelectorAll('.pz').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.id === puzzle)));
+      if (training) training = false;
+      newPuzzle();
+      if (puzzle === 'own' && tool === 'ask') setTool('a');
+      updateButtons(); render(true);
+    });
+  }
+  const bw = $('#brains');
+  for (const br of BRAINS) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'br'; b.dataset.id = br.id;
+    b.setAttribute('aria-pressed', String(br.id === brain));
+    b.innerHTML = `<b>${br.name}</b><small>${br.desc}</small>`;
+    bw.appendChild(b);
+    b.addEventListener('click', () => {
+      brain = br.id;
+      bw.querySelectorAll('.br').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.id === brain)));
+      if (training) training = false;
+      newNet(); updateButtons(); render(true);
+    });
+  }
+}
+function repaintPreviews() { document.querySelectorAll('.pz').forEach(b => previewPuzzle(b.querySelector('canvas'), b.dataset.id)); }
+
+function init() {
+  buildPickers();
+  newPuzzle();
+  repaintPreviews();
+  $('#messy').addEventListener('change', e => { messy = e.target.checked; training = false; newPuzzle(); updateButtons(); render(true); });
+  $('#trainBtn').addEventListener('click', () => (training ? stop() : start()));
+  $('#stepBtn').addEventListener('click', () => { if (!doStep()) { start(); return; } recordScores(); updateButtons(); render(true); });
+  $('#resetBtn').addEventListener('click', () => { training = false; newNet(); updateButtons(); render(true); });
+  $('#clearPins').addEventListener('click', () => { pins = []; drawMap(); });
+  $('#clearDots').addEventListener('click', () => { pts = pts.filter(p => !p.own); recordScores(); render(true); });
+  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool === tool && tool !== 'ask' ? 'ask' : b.dataset.tool)));
+  const map = $('#map');
+  let painting = false, lastPaint = null, paintCount = 0;
+  const paintAt = (p, force) => {
+    if (!force && lastPaint && Math.hypot(p.x - lastPaint.x, p.y - lastPaint.y) < 0.045) return false;
+    lastPaint = p; paintCount++;
+    pts.push({ x: clamp(p.x + randn() * 0.012), y: clamp(p.y + randn() * 0.012), c: tool === 'a' ? 1 : 0, test: paintCount % 4 === 0, own: true });
+    return true;
+  };
+  const endPaint = () => { painting = false; lastPaint = null; };
+  map.addEventListener('pointerup', endPaint);
+  map.addEventListener('pointercancel', endPaint);
+  map.addEventListener('pointermove', e => {
+    hover = mapPoint(e);
+    if (painting && tool !== 'ask') {
+      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      let added = false;
+      for (const ev of evs) if (paintAt(mapPoint(ev))) added = true;
+      if (added) { recordScores(); if (!training) render(true); }
+      return;
+    }
+    if (!training) drawMap();
+    updateReadout();
+  });
+  map.addEventListener('pointerleave', () => { hover = null; if (!training) drawMap(); });
+  map.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const p = mapPoint(e); hover = p;
+    if (tool === 'ask') { pins.push(p); if (pins.length > 8) pins.shift(); }
+    else {
+      painting = true;
+      try { map.setPointerCapture(e.pointerId); } catch (err) {}
+      lastPaint = null; paintAt(p, true); recordScores();
+    }
+    render(true);
+  });
+  const redraw = () => { try { render(true); } catch (e) {} };
+  window.addEventListener('resize', redraw);
+  try { new ResizeObserver(redraw).observe(map); } catch (e) {}
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { repaintPreviews(); redraw(); }); } catch (e) {}
+  if (fontLink) fontLink.addEventListener('load', () => setTimeout(redraw, 100));
+  updateButtons(); render(true);
+}
+init();
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Machine learning lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" id="fontCss" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@800&display=swap">
+<style>
+:root{
+  --paper:#F4F7FB; --card:#FFFFFF; --tile:#EFF3F8; --ink:#15243B; --muted:#56637A; --line:#C8D2E0; --hi:#FFD23F; --on-hi:#15243B;
+  color-scheme:light; box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#111B19; --card:#172421; --tile:#1F2F2B; --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D; --hi:#FFD23F; --on-hi:#111B19;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111B19; --card:#172421; --tile:#1F2F2B; --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D; --hi:#FFD23F; --on-hi:#111B19;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:var(--paper);color:var(--ink);
+  font:400 16px/1.4 "Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif}
+.bar{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;
+  padding:calc(10px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-right,0px)) 10px calc(16px + env(safe-area-inset-left,0px));
+  background:var(--card);border-bottom:1px solid var(--line)}
+.brand{font:800 1.15rem/1 "Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;letter-spacing:-0.01em;margin:0}
+.tabs{display:flex;gap:6px;padding:4px;border-radius:14px;background:var(--tile)}
+.tab{appearance:none;font:700 1rem/1 "Atkinson Hyperlegible",system-ui,sans-serif;color:var(--muted);background:transparent;
+  border:0;border-radius:10px;padding:10px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--card)}
+.tab:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+.ico{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--hi);color:var(--on-hi);
+  font:800 .8rem/1 "Bricolage Grotesque",system-ui,sans-serif}
+.ico.dots{border-radius:50%;background:conic-gradient(#E07B00 0 50%,#2F64E0 50% 100%)}
+.stage{flex:1;min-height:0;position:relative}
+.stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:var(--paper)}
+.stage iframe[hidden]{display:none}
+@media (max-width:520px){
+  .brand{display:none}
+  .bar{justify-content:center}
+  .tab{padding:10px 12px;font-size:.95rem}
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <p class="brand">Machine learning lab</p>
+  <div class="tabs" role="tablist" aria-label="Choose a demo">
+    <button class="tab" role="tab" id="tab-digits" aria-controls="panel-digits" data-view="digits"><span class="ico">7</span>Handwriting</button>
+    <button class="tab" role="tab" id="tab-dots" aria-controls="panel-dots" data-view="dots"><span class="ico dots"></span>Colored dots</button>
+  </div>
+</header>
+<main class="stage">
+  <iframe id="panel-digits" role="tabpanel" aria-labelledby="tab-digits" title="How a computer learns to read handwriting" data-src="digits.html" hidden></iframe>
+  <iframe id="panel-dots" role="tabpanel" aria-labelledby="tab-dots" title="How a computer learns to sort colored dots" data-src="dots.html" hidden></iframe>
+</main>
+<script>
+(() => {
+  const link = document.getElementById('fontCss');
+  if (link) { const on = () => { link.media = 'all'; }; link.addEventListener('load', on); if (link.sheet) on(); setTimeout(on, 3000); }
+
+  const views = ['digits', 'dots'];
+  const tabs = Object.fromEntries(views.map(v => [v, document.getElementById('tab-' + v)]));
+  const panels = Object.fromEntries(views.map(v => [v, document.getElementById('panel-' + v)]));
+
+  function show(view, focus) {
+    if (!views.includes(view)) view = 'digits';
+    for (const v of views) {
+      const on = v === view;
+      tabs[v].setAttribute('aria-selected', String(on));
+      tabs[v].tabIndex = on ? 0 : -1;
+      panels[v].hidden = !on;
+    }
+    const f = panels[view];
+    if (!f.getAttribute('src')) f.setAttribute('src', f.dataset.src); // load each demo the first time it's opened
+    if (focus) tabs[view].focus();
+    if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
+    document.title = (view === 'dots' ? 'Colored dots' : 'Handwriting') + ' | Machine learning lab';
+  }
+
+  for (const v of views) tabs[v].addEventListener('click', () => show(v));
+  document.querySelector('.tabs').addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const cur = views.findIndex(v => tabs[v].getAttribute('aria-selected') === 'true');
+    show(views[(cur + (e.key === 'ArrowRight' ? 1 : views.length - 1)) % views.length], true);
+    e.preventDefault();
+  });
+  window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+})();
+</script>
+</body>
+</html>

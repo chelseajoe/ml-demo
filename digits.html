@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a computer learns to read handwriting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" id="fontCss" media="print" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&family=Caveat&family=Indie+Flower&family=Patrick+Hand&family=Kalam&family=Shadows+Into+Light&family=Gloria+Hallelujah&family=Architects+Daughter&family=Nanum+Pen+Script&family=Reenie+Beanie&family=Covered+By+Your+Grace&family=Just+Another+Hand&family=Gochi+Hand&family=Schoolbell&family=Handlee&family=Nothing+You+Could+Do&family=Coming+Soon&display=swap">
+<style>
+:root{
+  --paper:#F4F7FB; --grid:#E2E8F1; --card:#FFFFFF; --tile:#EFF3F8;
+  --ink:#15243B; --muted:#56637A; --line:#C8D2E0;
+  --hi:#FFD23F; --on-hi:#15243B; --pos:#E39A00; --neg:#2F5BEA;
+  --good:#16875A; --bad:#D23C44;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#111B19; --grid:#192724; --card:#172421; --tile:#1F2F2B;
+    --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D;
+    --hi:#FFD23F; --on-hi:#111B19; --pos:#FFD23F; --neg:#729DFF;
+    --good:#4CC38A; --bad:#FF7070;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111B19; --grid:#192724; --card:#172421; --tile:#1F2F2B;
+  --ink:#E7EFEB; --muted:#9EB1A9; --line:#2E423D;
+  --hi:#FFD23F; --on-hi:#111B19; --pos:#FFD23F; --neg:#729DFF;
+  --good:#4CC38A; --bad:#FF7070;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--ink); background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:28px 28px;
+  font:400 17px/1.55 "Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:clamp(24px,5vw,56px) clamp(14px,4vw,32px) 64px}
+h1,h2,h3{font-family:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;color:var(--ink)}
+h1{font-weight:800;font-size:clamp(2.2rem,5.6vw,3.9rem);line-height:1.02;letter-spacing:-0.03em;margin:0 0 18px;max-width:15ch}
+h2{font-weight:800;font-size:clamp(1.5rem,3.2vw,2.05rem);line-height:1.12;letter-spacing:-0.02em;margin:4px 0 6px}
+h3{font-weight:800;font-size:1.15rem;line-height:1.25;margin:0 0 4px}
+p{margin:0}
+.lede{font-size:clamp(1.08rem,2vw,1.25rem);max-width:54ch;color:var(--muted);margin-bottom:26px}
+.n{display:inline-grid;place-items:center;flex:none;width:30px;height:30px;border-radius:50%;
+   background:var(--hi);color:var(--on-hi);font:800 1rem/1 "Bricolage Grotesque",system-ui,sans-serif}
+.steps{list-style:none;display:flex;flex-wrap:wrap;gap:10px;padding:0;margin:0}
+.steps a{display:flex;align-items:center;gap:10px;padding:8px 18px 8px 8px;border-radius:999px;background:var(--card);
+  border:1px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700}
+.steps a:hover{border-color:var(--ink)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:clamp(18px,3.4vw,34px);margin-top:26px}
+.panel-head{display:flex;gap:16px;align-items:flex-start;margin-bottom:22px}
+.panel-head .n{width:44px;height:44px;font-size:1.35rem}
+.panel-head p{max-width:64ch;color:var(--muted)}
+.sub{margin-top:28px}
+.sub > p{color:var(--muted);max-width:64ch;margin-bottom:12px}
+.muted{color:var(--muted)}
+:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+
+/* examples */
+.examples-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,320px);gap:28px;align-items:start}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+.tile{appearance:none;border:0;padding:0;margin:0;background:var(--tile);border-radius:7px;aspect-ratio:1;cursor:pointer;display:block}
+.tile canvas{width:100%;height:100%;display:block}
+.tile[aria-pressed="true"]{outline:3px solid var(--hi);outline-offset:1px}
+.progress{margin-top:14px;color:var(--muted);font-size:.95rem}
+.track{height:6px;border-radius:3px;background:var(--tile);overflow:hidden;margin-top:8px}
+.track span{display:block;height:100%;width:0;background:var(--hi)}
+.zoom canvas{width:100%;aspect-ratio:1;display:block;background:var(--tile);border-radius:12px;cursor:crosshair}
+.zoom figcaption{margin-top:10px;font-size:.98rem}
+.zoom .readout{color:var(--muted);font-size:.92rem;margin-top:4px;min-height:1.4em}
+.split{margin-top:24px;padding:14px 16px;border-radius:12px;background:var(--tile);max-width:72ch}
+figure{margin:0}
+
+/* practice */
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+.btn{font:700 1rem/1 "Atkinson Hyperlegible",system-ui,sans-serif;padding:13px 22px;border-radius:12px;border:2px solid var(--ink);
+  background:var(--ink);color:var(--card);cursor:pointer}
+.btn.secondary{background:transparent;color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.toggle{display:inline-flex;gap:8px;align-items:center;cursor:pointer;color:var(--muted)}
+.toggle input{width:18px;height:18px;accent-color:var(--ink)}
+.score{font:800 clamp(3rem,8vw,4.6rem)/0.95 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-0.03em}
+.stat small{display:block;color:var(--muted);font-size:.95rem;margin-top:4px}
+.stat b{font-size:1.15rem}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:18px}
+.chart canvas{width:100%;height:180px;display:block}
+.chart figcaption{margin-bottom:6px}
+.neurons{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:4px}
+.neurons canvas{width:100%;aspect-ratio:1;display:block;border-radius:3px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px;color:var(--muted);font-size:.92rem}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.quiz{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:8px}
+.q{background:var(--tile);border-radius:9px;padding:5px 5px 3px;text-align:center}
+.q canvas{width:100%;aspect-ratio:1;display:block}
+.q span{display:block;font-weight:700;font-size:.95rem;color:var(--muted)}
+.q.right span{color:var(--good)}
+.q.wrong{box-shadow:inset 0 0 0 2px var(--bad)}
+.q.wrong span{color:var(--bad)}
+
+/* try */
+.note{padding:12px 16px;border-radius:12px;background:var(--tile);border-left:5px solid var(--hi);margin-bottom:20px;max-width:72ch}
+.note[hidden]{display:none}
+.try-layout{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:32px;align-items:start}
+#pad{width:100%;aspect-ratio:1;display:block;border-radius:18px;border:2px dashed var(--line);touch-action:none;cursor:crosshair;
+  background-color:var(--tile);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:10% 10%;background-position:-1px -1px}
+.pad-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}
+.guess{display:flex;align-items:center;gap:18px;margin-bottom:18px}
+.guess-digit{display:grid;place-items:center;flex:none;width:1.35em;height:1.35em;border-radius:50%;background:var(--hi);color:var(--on-hi);
+  font:800 clamp(3.6rem,9vw,5.6rem)/1 "Bricolage Grotesque",system-ui,sans-serif}
+.guess p{font-size:1.1rem}
+.guess small{display:block;color:var(--muted);font-size:.95rem}
+.bar-row{display:grid;grid-template-columns:1.3em minmax(0,1fr) 3em;gap:10px;align-items:center;height:26px}
+.bar-d{font:800 1.05rem/1 "Bricolage Grotesque",system-ui,sans-serif;color:var(--muted);text-align:center}
+.bar-track{height:12px;border-radius:6px;background:var(--tile);overflow:hidden}
+.bar-fill{display:block;height:100%;width:0;border-radius:6px;background:var(--line);transition:width .15s ease-out}
+.bar-p{font-size:.92rem;color:var(--muted);text-align:right}
+.bar-row.top .bar-fill{background:var(--hi)}
+.bar-row.top .bar-d,.bar-row.top .bar-p{color:var(--ink);font-weight:800}
+@media (prefers-reduced-motion: reduce){.bar-fill{transition:none}}
+.net-fig{margin-top:30px}
+#net{width:100%;height:360px;display:block}
+.net-fig figcaption{color:var(--muted);font-size:.95rem;margin-top:8px;max-width:72ch}
+.teach{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.digit-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.digit-btns button{width:48px;height:48px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);
+  font:800 1.25rem/1 "Bricolage Grotesque",system-ui,sans-serif;cursor:pointer}
+.digit-btns button:hover{border-color:var(--ink)}
+.digit-btns button:active{background:var(--hi);color:var(--on-hi)}
+footer{margin-top:28px;color:var(--muted);font-size:.95rem;max-width:72ch}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);opacity:0;
+  background:var(--ink);color:var(--card);padding:12px 18px;border-radius:12px;font-weight:700;max-width:calc(100% - 32px);
+  pointer-events:none;transition:opacity .2s,transform .2s;z-index:5}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion: reduce){#toast{transition:none}}
+
+
+/* stats */
+.stats{display:grid;grid-template-columns:minmax(0,1.1fr) repeat(3,minmax(0,1fr));gap:18px 28px;align-items:end;margin:26px 0 8px}
+.stats .track{margin:8px 0 0}
+.small{font-size:.93rem;line-height:1.45}
+/* peek */
+.peek{margin-top:28px;padding:clamp(16px,2.6vw,24px);border-radius:16px;border:2px solid var(--ink)}
+.peek > p.muted{margin:2px 0 16px;max-width:70ch}
+.peek-empty{padding:10px 14px;border-radius:10px;background:var(--tile);border-left:5px solid var(--hi);margin-bottom:16px}
+.peek-empty[hidden]{display:none}
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;counter-reset:none}
+.stage{position:relative;background:var(--tile);border-radius:12px;padding:14px;opacity:.28;transition:opacity .25s ease-out}
+.stage.on{opacity:1}
+@media (prefers-reduced-motion: reduce){.stage{transition:none}}
+.stage:not(:last-child)::after{content:"";position:absolute;right:-12px;top:50%;width:10px;height:10px;border-top:3px solid var(--muted);border-right:3px solid var(--muted);transform:translate(-2px,-50%) rotate(45deg)}
+.stage h4{font:800 1rem/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 10px}
+.stage p{margin-top:6px}
+.pk-img-wrap{background:var(--card);border-radius:8px;padding:6px}
+#pkImg{width:100%;aspect-ratio:1;display:block;image-rendering:pixelated}
+.pk-label{display:inline-grid;place-items:center;min-width:1.6em;height:1.6em;border-radius:50%;background:var(--ink);color:var(--card);font:800 1.1rem/1 "Bricolage Grotesque",system-ui,sans-serif;vertical-align:middle}
+.minibars{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;height:120px}
+.mb{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.mb-col{position:relative;flex:1;width:100%;background:var(--card);border-radius:4px;overflow:hidden}
+.mb-fill{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--line);transition:height .3s ease-out}
+.mb-prev{display:none;position:absolute;left:-1px;right:-1px;height:0;border-top:3px dashed var(--ink)}
+.mb-d{font:800 .82rem/1 "Bricolage Grotesque",system-ui,sans-serif;color:var(--muted)}
+.mb.mb-guess .mb-fill{background:var(--hi)}
+.mb.mb-answer .mb-col{box-shadow:inset 0 0 0 2px var(--ink)}
+.mb.mb-answer .mb-d{color:var(--card);background:var(--ink);border-radius:4px;padding:2px 3px}
+@media (prefers-reduced-motion: reduce){.mb-fill{transition:none}}
+.verdict{display:inline-block;font-weight:800;padding:3px 10px;border-radius:999px}
+.verdict.good{background:var(--good);color:var(--card)}
+.verdict.bad{background:var(--bad);color:var(--card)}
+.pk-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pk-pair canvas{width:100%;aspect-ratio:1;display:block;border-radius:6px;image-rendering:pixelated}
+.pk-pair figcaption{font-size:.8rem;color:var(--muted);margin-top:3px;text-align:center}
+.mb-key{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:14px;color:var(--muted);font-size:.9rem}
+.mb-key i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:6px}
+.k-ans{box-shadow:inset 0 0 0 2px var(--ink)}
+.k-guess{background:var(--hi)}
+.k-prev{height:0!important;width:16px!important;border-top:3px dashed var(--ink);vertical-align:3px!important}
+/* report card */
+.report{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:8px}
+.rc{background:var(--tile);border-radius:10px;padding:10px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+.rc-d{font:800 1.8rem/1 "Bricolage Grotesque",system-ui,sans-serif}
+.rc-p{font-weight:700}
+.rc-track{width:100%;height:6px;border-radius:3px;background:var(--card);overflow:hidden}
+.rc-fill{display:block;height:100%;width:0;background:var(--good)}
+.rc.weak .rc-fill{background:var(--bad)}
+.rc-note{font-size:.78rem;line-height:1.25;color:var(--muted);min-height:2.5em}
+.rc.weak .rc-note{color:var(--bad);font-weight:700}
+.chart figcaption p{margin:0 0 6px;max-width:46ch}
+@media (max-width:900px){
+  .stages{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stage:nth-child(2)::after{display:none}
+  .report{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:480px){
+  .stages{grid-template-columns:minmax(0,1fr)}
+  .stage:not(:last-child)::after{right:50%;top:auto;bottom:-12px;transform:translate(50%,0) rotate(135deg)}
+  .stage:nth-child(2)::after{display:block}
+  .pk-img-wrap{max-width:160px}
+}
+
+@media (max-width:780px){
+  .examples-layout,.try-layout,.charts{grid-template-columns:minmax(0,1fr)}
+  .zoom{max-width:340px}
+  .try-layout > div:first-child{max-width:380px}
+  .neurons{grid-template-columns:repeat(8,minmax(0,1fr))}
+  #net{height:320px}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>How a computer learns to read handwriting</h1>
+    <p class="lede">Nobody writes rules like “a 7 has a line across the top.” Instead we show a computer thousands of examples, let it practice, and then test it. Everything below runs live in your browser.</p>
+    <ol class="steps">
+      <li><a href="#examples"><span class="n">1</span>Look at the examples</a></li>
+      <li><a href="#practice"><span class="n">2</span>Let it practice</a></li>
+      <li><a href="#try"><span class="n">3</span>Test it with your handwriting</a></li>
+    </ol>
+  </header>
+
+  <section class="panel" id="examples">
+    <div class="panel-head"><span class="n">1</span><div>
+      <h2>Look at the examples</h2>
+      <p>Each example is a handwritten-style digit paired with the right answer, called its label. Every image is shrunk to a 28 × 28 grid, the same size used by MNIST, the famous dataset of real handwritten digits.</p>
+    </div></div>
+    <div class="examples-layout">
+      <div>
+        <div class="tiles" id="tiles"></div>
+        <p class="progress" id="genStatus" aria-live="polite">Loading handwriting styles…</p>
+        <div class="track" aria-hidden="true"><span id="genBar"></span></div>
+      </div>
+      <figure class="zoom">
+        <canvas id="zoom" aria-label="Zoomed-in example showing its 28 by 28 pixel grid"></canvas>
+        <figcaption id="zoomCap">Tap an example to zoom in.</figcaption>
+        <p class="readout" id="zoomRead">Point at a square to see its number.</p>
+      </figure>
+    </div>
+    <p class="split"><b>Practice set and test set.</b> 6,000 examples are for practice. Another 1,000 are kept hidden as a test, so we can check whether the model really learned or just memorized the answers.</p>
+  </section>
+
+  <section class="panel" id="practice">
+    <div class="panel-head"><span class="n">2</span><div>
+      <h2>Let it practice</h2>
+      <p>Practice works like flashcards: look at an example, guess, check the label, adjust. The model is a small neural network with about 51,000 settings, which are numbers it can tune. They start out random, so its first guesses are bad. Every practice step it guesses 32 examples, then nudges every setting a tiny bit so those guesses would have been less wrong.</p>
+    </div></div>
+    <div class="controls">
+      <button class="btn" id="trainBtn" type="button" disabled>Start training</button>
+      <button class="btn secondary" id="stepBtn" type="button" disabled>Do one practice step</button>
+      <button class="btn secondary" id="resetBtn" type="button" disabled>Start over</button>
+      <label class="toggle"><input type="checkbox" id="slow"> Slow motion</label>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="score" id="score">–</div><small>Score on the 1,000 hidden test examples</small></div>
+      <div class="stat"><b id="rounds">Round 1 of 12</b><div class="track"><span id="roundBar"></span></div><small id="roundDetail">0 of 6,000 examples so far this round</small></div>
+      <div class="stat"><b id="steps">0</b><small>Practice steps. Each one: guess 32 examples, then nudge the settings.</small></div>
+      <div class="stat"><b id="seen">0</b><small>Examples studied, which is steps × 32. The same 6,000 come back every round.</small></div>
+    </div>
+
+    <div class="peek">
+      <h3>Inside one practice step</h3>
+      <p class="muted">While it trains, this shows one example from the current step, picking one it got wrong when it can.</p>
+      <p class="peek-empty" id="peekEmpty">Press <b>Do one practice step</b> to walk through a single step, or <b>Start training</b> to watch them fly by.</p>
+      <div class="stages">
+        <div class="stage">
+          <h4>Look at an example</h4>
+          <div class="pk-img-wrap"><canvas id="pkImg" width="28" height="28" aria-label="The example being practiced"></canvas></div>
+          <p>Its label says <b class="pk-label" id="pkLabel">–</b></p>
+        </div>
+        <div class="stage">
+          <h4>Guess</h4>
+          <div class="minibars" id="pkBefore" aria-hidden="true"></div>
+          <p><span class="verdict" id="pkVerdict"></span></p>
+          <p class="small" id="pkGuessText"></p>
+          <p class="small">How wrong: <b id="pkLossB">–</b></p>
+        </div>
+        <div class="stage">
+          <h4>Nudge the settings</h4>
+          <div class="pk-pair">
+            <figure><canvas id="pkPattern" width="28" height="28"></canvas><figcaption id="pkNeuron">A neuron</figcaption></figure>
+            <figure><canvas id="pkChange" width="28" height="28"></canvas><figcaption>Its change</figcaption></figure>
+          </div>
+          <p class="small" id="pkNudgeText"></p>
+          <p class="small" id="pkVoteText"></p>
+        </div>
+        <div class="stage">
+          <h4>Same example, after the nudge</h4>
+          <div class="minibars" id="pkAfter" aria-hidden="true"></div>
+          <p class="small" id="pkAfterText"></p>
+          <p class="small">How wrong: <b id="pkLossA">–</b></p>
+          <p class="small muted" id="pkAfterNote"></p>
+        </div>
+      </div>
+      <p class="mb-key"><span><i class="k-ans"></i>The right answer</span><span><i class="k-guess"></i>Its top guess</span><span><i class="k-prev"></i>Where the right answer was before</span></p>
+    </div>
+
+    <div class="charts">
+      <figure class="chart"><figcaption><h3>Test score</h3><p class="small muted">Percent of the hidden test it gets right. Higher is better.</p></figcaption><canvas id="accChart" aria-label="Chart of test score over practice time"></canvas></figure>
+      <figure class="chart"><figcaption><h3>How wrong it is</h3><p class="small muted">The average “how wrong” number from the steps above. It drops toward 0 as guesses get right and confident.</p></figcaption><canvas id="lossChart" aria-label="Chart of error over practice time"></canvas></figure>
+    </div>
+    <div class="sub">
+      <h3>Report card for each digit</h3>
+      <p>How often it gets each digit right on the hidden test, and what it confuses it with most.</p>
+      <div class="report" id="report"></div>
+    </div>
+    <div class="sub">
+      <h3>What the 64 neurons are looking for</h3>
+      <p>Each square is one neuron’s pattern. Before training it’s random static. Turn on slow motion and watch strokes, loops, and edges appear. A few may stay static; those neurons never got used.</p>
+      <div class="neurons" id="neurons"></div>
+      <div class="legend"><span><i style="background:var(--pos)"></i>Ink here makes the neuron fire</span><span><i style="background:var(--neg)"></i>Ink here holds it back</span></div>
+    </div>
+    <div class="sub">
+      <h3>Test questions it has never seen</h3>
+      <p>Its answer is under each digit. A red box means it got that one wrong.</p>
+      <div class="quiz" id="quiz"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="try">
+    <div class="panel-head"><span class="n">3</span><div>
+      <h2>Test it with your handwriting</h2>
+      <p>Draw one digit, 0 to 9, large in the box. The model has never seen your writing, so this is the real test.</p>
+    </div></div>
+    <p class="note" id="untrainedNote">It hasn’t practiced yet, so right now it’s guessing at random. Try a digit, then train it in step 2 and come back to compare.</p>
+    <div class="try-layout">
+      <div>
+        <canvas id="pad" aria-label="Drawing area. Draw a digit with your mouse, finger, or pen."></canvas>
+        <div class="pad-actions">
+          <span class="muted">Draw with a mouse, finger, or pen</span>
+          <button class="btn secondary" id="clearBtn" type="button">Clear</button>
+        </div>
+      </div>
+      <div>
+        <div class="guess" aria-live="polite">
+          <span class="guess-digit" id="guessDigit">?</span>
+          <p><small>Its guess</small><span id="guessSure">Draw a digit in the box to see its guess.</span></p>
+        </div>
+        <div id="bars"></div>
+      </div>
+    </div>
+    <figure class="net-fig">
+      <canvas id="net" aria-label="Diagram of the network: your drawing as 28 by 28 squares, 64 neurons lighting up, and 10 answers"></canvas>
+      <figcaption>Your drawing becomes 784 numbers. Neurons whose pattern matches it light up yellow, and their votes flow to the answers. Yellow lines push an answer up; blue lines push it down.</figcaption>
+    </figure>
+    <div class="teach">
+      <h3>Wrong guess? Teach it.</h3>
+      <p class="muted">Tap the digit you meant. It will practice on your drawing plus a few extra examples, the same way it learned everything else.</p>
+      <div class="digit-btns" id="digitBtns"></div>
+    </div>
+  </section>
+
+  <footer>The practice digits are written in 16 handwriting-style fonts, with random tilts and stroke widths, and generated fresh each time the page loads. The classic version of this experiment uses MNIST: 70,000 digits written by real students and census workers.</footer>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+'use strict';
+
+const IN = 784, H = 64, OUT = 10;
+const N_TRAIN = 6000, N_TEST = 1000, BATCH = 32, ROUNDS = 12;
+const TILE_COUNT = 80, QUIZ_COUNT = 18, PAD = 480, PAD_LW = 40;
+const FONTS = ['Caveat','Indie Flower','Patrick Hand','Kalam','Shadows Into Light','Gloria Hallelujah',
+  'Architects Daughter','Nanum Pen Script','Reenie Beanie','Covered By Your Grace','Just Another Hand',
+  'Gochi Hand','Schoolbell','Handlee','Nothing You Could Do','Coming Soon'];
+
+const $ = s => document.querySelector(s);
+// Some embedded viewers pause requestAnimationFrame; fall back to a timer so the page never stalls.
+const rafNative = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;
+const requestAnimationFrame = cb => {
+  let done = false;
+  const go = () => { if (!done) { done = true; cb(); } };
+  if (rafNative) rafNative(go);
+  setTimeout(go, 50);
+};
+function reportProblem(msg) {
+  const el = document.querySelector('#genStatus');
+  if (el && !/ready/.test(el.textContent)) el.textContent = `Setup stopped: ${msg}. Reload the page to try again.`;
+}
+window.addEventListener('error', e => reportProblem(e.message || 'unknown error'));
+window.addEventListener('unhandledrejection', e => reportProblem((e.reason && e.reason.message) || 'unknown error'));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+const rand = (a, b) => a + Math.random() * (b - a);
+function hexToRgb(h) {
+  h = h.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function randn() {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; }
+}
+const fmtInt = n => n.toLocaleString('en-US');
+
+/* ---------------- The neural network: 784 -> 64 (ReLU) -> 10 (softmax) ---------------- */
+class Net {
+  constructor() {
+    this.W1 = new Float32Array(IN * H); this.b1 = new Float32Array(H);   // W1 stored [pixel][neuron]
+    this.W2 = new Float32Array(H * OUT); this.b2 = new Float32Array(OUT); // W2 stored [digit][neuron]
+    const s1 = Math.sqrt(2 / IN), s2 = Math.sqrt(2 / H);
+    for (let n = 0; n < this.W1.length; n++) this.W1[n] = randn() * s1 * 0.3;
+    for (let n = 0; n < this.W2.length; n++) this.W2[n] = randn() * s2;
+    this.params = [this.W1, this.b1, this.W2, this.b2];
+    this.grads = this.params.map(p => new Float32Array(p.length));
+    this.m = this.params.map(p => new Float32Array(p.length));
+    this.v = this.params.map(p => new Float32Array(p.length));
+    this.t = 0; this.lr = 0.002;
+    this.h = new Float32Array(H); this.p = new Float32Array(OUT); this.dh = new Float32Array(H);
+  }
+  forward(x, h = this.h, p = this.p) {
+    const W1 = this.W1, W2 = this.W2;
+    h.set(this.b1);
+    for (let j = 0; j < IN; j++) {
+      const xv = x[j]; if (xv === 0) continue;
+      const o = j * H;
+      for (let i = 0; i < H; i++) h[i] += W1[o + i] * xv;
+    }
+    for (let i = 0; i < H; i++) if (h[i] < 0) h[i] = 0;
+    let mx = -Infinity;
+    for (let k = 0; k < OUT; k++) {
+      let s = this.b2[k]; const o = k * H;
+      for (let i = 0; i < H; i++) s += W2[o + i] * h[i];
+      p[k] = s; if (s > mx) mx = s;
+    }
+    let sum = 0;
+    for (let k = 0; k < OUT; k++) { p[k] = Math.exp(p[k] - mx); sum += p[k]; }
+    for (let k = 0; k < OUT; k++) p[k] /= sum;
+    return p;
+  }
+  trainBatch(xs, ys) {
+    const [gW1, gb1, gW2, gb2] = this.grads;
+    for (const g of this.grads) g.fill(0);
+    const h = this.h, p = this.p, dh = this.dh, W2 = this.W2;
+    let loss = 0;
+    for (let b = 0; b < xs.length; b++) {
+      const x = xs[b], y = ys[b];
+      this.forward(x, h, p);
+      loss -= Math.log(p[y] + 1e-9);
+      p[y] -= 1; // p now holds the error signal for each output
+      dh.fill(0);
+      for (let k = 0; k < OUT; k++) {
+        const d = p[k]; if (d === 0) continue;
+        gb2[k] += d; const o = k * H;
+        for (let i = 0; i < H; i++) { gW2[o + i] += d * h[i]; dh[i] += W2[o + i] * d; }
+      }
+      for (let i = 0; i < H; i++) { if (h[i] <= 0) dh[i] = 0; gb1[i] += dh[i]; }
+      for (let j = 0; j < IN; j++) {
+        const xv = x[j]; if (xv === 0) continue;
+        const o = j * H;
+        for (let i = 0; i < H; i++) gW1[o + i] += xv * dh[i];
+      }
+    }
+    this.adam(xs.length);
+    return loss / xs.length;
+  }
+  adam(bs) {
+    this.t++;
+    const b1 = 0.9, b2 = 0.999;
+    const bc1 = 1 - Math.pow(b1, this.t), bc2 = 1 - Math.pow(b2, this.t);
+    const a = this.lr / bc1;
+    for (let q = 0; q < 4; q++) {
+      const P = this.params[q], G = this.grads[q], M = this.m[q], V = this.v[q];
+      for (let n = 0; n < P.length; n++) {
+        const g = G[n] / bs;
+        M[n] = b1 * M[n] + (1 - b1) * g;
+        V[n] = b2 * V[n] + (1 - b2) * g * g;
+        P[n] -= a * M[n] / (Math.sqrt(V[n] / bc2) + 1e-8);
+      }
+      if (q === 0) { const keep = 1 - this.lr * 0.4; for (let n = 0; n < P.length; n++) P[n] *= keep; } // weight decay cleans up unused pixels
+    }
+  }
+}
+
+/* ---------------- Turning any drawing into 28x28 numbers (MNIST-style) ---------------- */
+const work = document.createElement('canvas'); work.width = work.height = 140;
+const wctx = work.getContext('2d', { willReadFrequently: true });
+
+function preprocess(src, sctx, out) {
+  const w = src.width, hh = src.height;
+  const d = sctx.getImageData(0, 0, w, hh).data;
+  let minx = w, miny = hh, maxx = -1, maxy = -1, sum = 0, sx = 0, sy = 0;
+  for (let y = 0; y < hh; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      const a = d[(row + x) * 4 + 3];
+      if (a === 0) continue;
+      if (a > 20) {
+        if (x < minx) minx = x; if (x > maxx) maxx = x;
+        if (y < miny) miny = y; if (y > maxy) maxy = y;
+      }
+      sum += a; sx += a * x; sy += a * y;
+    }
+  }
+  if (maxx < 0) return null;
+  const s = 88 / Math.max(maxx - minx + 1, maxy - miny + 1);
+  const mx = sx / sum, my = sy / sum;
+  wctx.setTransform(1, 0, 0, 1, 0, 0);
+  wctx.clearRect(0, 0, 140, 140);
+  wctx.imageSmoothingEnabled = true; wctx.imageSmoothingQuality = 'high';
+  wctx.setTransform(s, 0, 0, s, 70 - s * mx, 70 - s * my);
+  wctx.drawImage(src, 0, 0);
+  const wd = wctx.getImageData(0, 0, 140, 140).data;
+  out = out || new Float32Array(IN);
+  for (let r = 0; r < 28; r++) for (let c = 0; c < 28; c++) {
+    let t = 0;
+    for (let yy = 0; yy < 5; yy++) {
+      const base = ((r * 5 + yy) * 140 + c * 5) * 4 + 3;
+      for (let xx = 0; xx < 5; xx++) t += wd[base + xx * 4];
+    }
+    let v = t / (25 * 255);
+    v = v < 0.03 ? 0 : Math.min(1, v * 1.15);
+    out[r * 28 + c] = v;
+  }
+  return out;
+}
+
+/* ---------------- Generating the examples ---------------- */
+const glyph = document.createElement('canvas'); glyph.width = glyph.height = 144;
+const gctx = glyph.getContext('2d', { willReadFrequently: true });
+let fontsReady = [];
+
+function waitForFontCss() {
+  const link = document.getElementById('fontCss');
+  if (!link) return Promise.resolve();
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; link.media = 'all'; resolve(); } };
+    if (link.sheet) { try { if (link.sheet.href) finish(); } catch (e) {} }
+    link.addEventListener('load', finish);
+    link.addEventListener('error', finish);
+    setTimeout(finish, 4000);
+  });
+}
+async function loadFonts() {
+  fontsReady = [];
+  await waitForFontCss();
+  try {
+    if (document.fonts && document.fonts.load) {
+      const tries = FONTS.map(f => {
+        try { return document.fonts.load(`72px "${f}"`, '0123456789').then(r => (r && r.length ? f : null), () => null); }
+        catch (e) { return Promise.resolve(null); }
+      });
+      const deadline = new Promise(r => setTimeout(() => r(null), 3000));
+      const res = await Promise.race([Promise.all(tries), deadline]);
+      if (res) fontsReady = res.filter(Boolean);
+      else fontsReady = FONTS.filter(f => { try { return document.fonts.check(`72px "${f}"`, '0123456789'); } catch (e) { return false; } });
+    }
+  } catch (e) { fontsReady = []; }
+  fontsReady.push('sans-serif', 'serif');
+}
+
+const scratch = new Float32Array(IN);
+function renderDigit(d) {
+  const f = fontsReady[(Math.random() * fontsReady.length) | 0];
+  gctx.setTransform(1, 0, 0, 1, 0, 0);
+  gctx.clearRect(0, 0, 144, 144);
+  gctx.translate(72 + rand(-4, 4), 72 + rand(-4, 4));
+  gctx.rotate(rand(-0.22, 0.22));
+  gctx.transform(1, 0, rand(-0.25, 0.25), 1, 0, 0);
+  gctx.scale(rand(0.8, 1.2), rand(0.85, 1.15));
+  gctx.font = (f === 'sans-serif' || f === 'serif') ? `64px ${f}` : `72px "${f}"`;
+  gctx.textAlign = 'center'; gctx.textBaseline = 'middle';
+  gctx.fillStyle = '#000';
+  gctx.fillText(String(d), 0, 0);
+  const lw = rand(0, 5);
+  if (lw > 0.8) { gctx.lineWidth = lw; gctx.lineJoin = 'round'; gctx.strokeStyle = '#000'; gctx.strokeText(String(d), 0, 0); }
+  return preprocess(glyph, gctx, scratch);
+}
+
+const trainX = new Float32Array(N_TRAIN * IN), trainY = new Uint8Array(N_TRAIN);
+const testX = new Float32Array(N_TEST * IN), testY = new Uint8Array(N_TEST);
+const vecTrain = i => trainX.subarray(i * IN, (i + 1) * IN);
+const vecTest = i => testX.subarray(i * IN, (i + 1) * IN);
+let genCount = 0, dataReady = false;
+
+function genChunk() {
+  const total = N_TRAIN + N_TEST, t0 = performance.now();
+  while (genCount < total && performance.now() - t0 < 18) {
+    const i = genCount, d = i % 10;
+    const v = renderDigit(d);
+    if (i < N_TRAIN) { if (v) trainX.set(v, i * IN); trainY[i] = d; }
+    else { const k = i - N_TRAIN; if (v) testX.set(v, k * IN); testY[k] = d; }
+    genCount++;
+    if (i < TILE_COUNT) paintVec(tiles[i].cv, vecTrain(i), hexToRgb(css('--ink')));
+    if (i === 0) selectTile(0);
+  }
+  $('#genStatus').textContent = genCount < total
+    ? `Writing examples: ${fmtInt(genCount)} of ${fmtInt(total)}`
+    : `${fmtInt(N_TRAIN)} practice examples and ${fmtInt(N_TEST)} test examples are ready. Tap any example to zoom in.`;
+  $('#genBar').style.width = (100 * genCount / total) + '%';
+  if (genCount < total) requestAnimationFrame(genChunk);
+  else onDataReady();
+}
+
+/* ---------------- Drawing helpers ---------------- */
+function sizeCanvas(cv) {
+  const r = dpr();
+  const W = cv.clientWidth, Hh = cv.clientHeight;
+  const w = Math.max(1, Math.round(W * r)), h = Math.max(1, Math.round(Hh * r));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(r, 0, 0, r, 0, 0);
+  return [ctx, W, Hh];
+}
+function paintVec(cv, vec, rgb) {
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(28, 28), d = img.data;
+  for (let n = 0; n < IN; n++) {
+    d[n * 4] = rgb[0]; d[n * 4 + 1] = rgb[1]; d[n * 4 + 2] = rgb[2];
+    d[n * 4 + 3] = vec ? Math.round(vec[n] * 255) : 0;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function mk28() { const c = document.createElement('canvas'); c.width = c.height = 28; return c; }
+
+/* ---------------- Section 1: examples ---------------- */
+const tiles = [];
+let zoomIdx = null, hoverCell = null;
+function buildTiles() {
+  const wrap = $('#tiles');
+  for (let i = 0; i < TILE_COUNT; i++) {
+    const b = document.createElement('button');
+    b.className = 'tile'; b.type = 'button';
+    b.setAttribute('aria-label', `Example labeled ${i % 10}`);
+    b.setAttribute('aria-pressed', 'false');
+    const cv = mk28(); b.appendChild(cv);
+    b.addEventListener('click', () => { if (i < genCount) selectTile(i); });
+    wrap.appendChild(b);
+    tiles.push({ b, cv });
+  }
+}
+function selectTile(i) {
+  if (zoomIdx != null) tiles[zoomIdx].b.setAttribute('aria-pressed', 'false');
+  zoomIdx = i; tiles[i].b.setAttribute('aria-pressed', 'true');
+  $('#zoomCap').textContent = `This one is labeled “${trainY[i]}”. To the computer it’s just 784 numbers, one per square: 0 is blank paper, 1 is full ink.`;
+  drawZoom();
+}
+function drawZoom() {
+  const cv = $('#zoom');
+  const [ctx, W] = sizeCanvas(cv);
+  ctx.clearRect(0, 0, W, W);
+  if (zoomIdx == null) return;
+  const vec = vecTrain(zoomIdx), c = W / 28, ink = hexToRgb(css('--ink')).join(',');
+  for (let r = 0; r < 28; r++) for (let q = 0; q < 28; q++) {
+    const v = vec[r * 28 + q];
+    if (v > 0) { ctx.fillStyle = `rgba(${ink},${v})`; ctx.fillRect(q * c, r * c, c, c); }
+  }
+  ctx.strokeStyle = css('--line'); ctx.lineWidth = 0.5; ctx.beginPath();
+  for (let k = 1; k < 28; k++) { ctx.moveTo(k * c, 0); ctx.lineTo(k * c, W); ctx.moveTo(0, k * c); ctx.lineTo(W, k * c); }
+  ctx.stroke();
+  if (hoverCell) {
+    ctx.strokeStyle = css('--hi'); ctx.lineWidth = 3;
+    ctx.strokeRect(hoverCell[1] * c, hoverCell[0] * c, c, c);
+  }
+}
+function zoomHover(e) {
+  if (zoomIdx == null) return;
+  const cv = $('#zoom'), rect = cv.getBoundingClientRect();
+  const q = Math.floor((e.clientX - rect.left) / rect.width * 28), r = Math.floor((e.clientY - rect.top) / rect.height * 28);
+  if (q < 0 || q > 27 || r < 0 || r > 27) return;
+  hoverCell = [r, q];
+  const v = vecTrain(zoomIdx)[r * 28 + q];
+  $('#zoomRead').textContent = `Square at row ${r + 1}, column ${q + 1}: ${v.toFixed(2)}`;
+  drawZoom();
+}
+
+/* ---------------- Section 2: training ---------------- */
+let net = new Net();
+let training = false, maxRounds = ROUNDS, round = 0, permPos = 0, steps = 0, seen = 0, lossEma = null;
+const perm = Uint32Array.from({ length: N_TRAIN }, (_, i) => i);
+let lossHist = [], accHist = [];
+const bxs = new Array(BATCH), bys = new Array(BATCH);
+const quiz = [];
+const neuronCvs = [];
+let lastWeightPaint = 0, lastLivePredict = 0, frame = 0;
+
+let conf = null;
+function evaluate() {
+  const h = new Float32Array(H), p = new Float32Array(OUT);
+  const c = Array.from({ length: OUT }, () => new Uint16Array(OUT));
+  let correct = 0;
+  for (let k = 0; k < N_TEST; k++) {
+    net.forward(vecTest(k), h, p);
+    let am = 0; for (let j = 1; j < OUT; j++) if (p[j] > p[am]) am = j;
+    c[testY[k]][am]++;
+    if (am === testY[k]) correct++;
+  }
+  conf = c;
+  return correct / N_TEST;
+}
+function recordAcc() { accHist.push(evaluate()); updateQuiz(); updateReport(); }
+const argmax = p => { let am = 0; for (let j = 1; j < p.length; j++) if (p[j] > p[am]) am = j; return am; };
+
+/* ---- Peek inside one practice step ---- */
+let lastCapture = 0, revealTimers = [];
+function makeCapture(x, y) {
+  const h = new Float32Array(H), p = new Float32Array(OUT);
+  net.forward(x, h, p);
+  const before = Float32Array.from(p);
+  const dh = new Float32Array(H);
+  for (let k = 0; k < OUT; k++) {
+    const d = p[k] - (k === y ? 1 : 0);
+    for (let i = 0; i < H; i++) dh[i] += net.W2[k * H + i] * d;
+  }
+  let best = -1, bv = 0;
+  for (let i = 0; i < H; i++) if (h[i] > 0 && Math.abs(dh[i]) * h[i] > bv) { bv = Math.abs(dh[i]) * h[i]; best = i; }
+  const change = new Float32Array(IN);
+  if (best >= 0) for (let j = 0; j < IN; j++) change[j] = -dh[best] * x[j];
+  return { x: Float32Array.from(x), y, before, guess: argmax(before), neuron: best, push: best >= 0 ? -dh[best] : 0, change,
+    lossBefore: -Math.log(before[y] + 1e-9) };
+}
+function finishCapture(cap) {
+  const p = new Float32Array(OUT);
+  net.forward(cap.x, new Float32Array(H), p);
+  cap.after = Float32Array.from(p);
+  cap.lossAfter = -Math.log(p[cap.y] + 1e-9);
+  cap.pattern = new Float32Array(IN);
+  if (cap.neuron >= 0) for (let j = 0; j < IN; j++) cap.pattern[j] = net.W1[j * H + cap.neuron];
+}
+function pickFromBatch() {
+  const h = new Float32Array(H), p = new Float32Array(OUT);
+  const order = Array.from({ length: BATCH }, (_, i) => i); shuffle(order);
+  for (const b of order) { net.forward(bxs[b], h, p); if (argmax(p) !== bys[b]) return b; }
+  return order[0];
+}
+function paintSigned(cv, arr) {
+  const bg = hexToRgb(css('--tile')), pos = hexToRgb(css('--pos')), neg = hexToRgb(css('--neg'));
+  let mx = 1e-9; for (let j = 0; j < IN; j++) { const a = Math.abs(arr[j]); if (a > mx) mx = a; }
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(28, 28), d = img.data;
+  for (let j = 0; j < IN; j++) {
+    const t = arr[j] / mx, c = t > 0 ? pos : neg, a = Math.min(1, Math.abs(t) * 1.3);
+    d[j * 4] = bg[0] + (c[0] - bg[0]) * a; d[j * 4 + 1] = bg[1] + (c[1] - bg[1]) * a;
+    d[j * 4 + 2] = bg[2] + (c[2] - bg[2]) * a; d[j * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function buildMiniBars(el) {
+  for (let d = 0; d < OUT; d++) {
+    const m = document.createElement('div'); m.className = 'mb';
+    m.innerHTML = `<div class="mb-col"><span class="mb-fill"></span><span class="mb-prev"></span></div><span class="mb-d">${d}</span>`;
+    el.appendChild(m);
+  }
+}
+function setMiniBars(el, p, y, g, prev) {
+  const kids = el.children;
+  for (let d = 0; d < OUT; d++) {
+    const m = kids[d];
+    m.classList.toggle('mb-answer', d === y);
+    m.classList.toggle('mb-guess', d === g);
+    m.querySelector('.mb-fill').style.height = (p ? Math.max(1.5, p[d] * 100) : 0) + '%';
+    const pv = m.querySelector('.mb-prev');
+    if (prev && d === y) { pv.style.display = 'block'; pv.style.bottom = (prev[d] * 100) + '%'; } else pv.style.display = 'none';
+  }
+}
+const pct = v => {
+  const n = v * 100;
+  return n >= 1 ? Math.round(n) + '%' : n >= 0.1 ? n.toFixed(1) + '%' : 'under 0.1%';
+};
+let lastCap = null;
+function showCapture(cap, slowReveal) {
+  lastCap = cap;
+  $('#peekEmpty').hidden = true;
+  const ink = hexToRgb(css('--ink'));
+  paintVec($('#pkImg'), cap.x, ink);
+  $('#pkLabel').textContent = cap.y;
+  const right = cap.guess === cap.y;
+  setMiniBars($('#pkBefore'), cap.before, cap.y, cap.guess, null);
+  $('#pkVerdict').className = 'verdict ' + (right ? 'good' : 'bad');
+  $('#pkVerdict').textContent = right ? `✓ Guessed ${cap.guess}` : `✗ Guessed ${cap.guess}`;
+  $('#pkGuessText').textContent = right
+    ? `Right, ${pct(cap.before[cap.y])} sure. It still nudges toward 100%.`
+    : `Wrong. It gave “${cap.y}” only ${pct(cap.before[cap.y])}.`;
+  $('#pkLossB').textContent = cap.lossBefore.toFixed(2);
+  if (cap.neuron >= 0) {
+    paintSigned($('#pkPattern'), cap.pattern);
+    paintSigned($('#pkChange'), cap.change);
+    $('#pkNeuron').textContent = `Neuron ${cap.neuron + 1}`;
+    $('#pkNudgeText').textContent = cap.push > 0
+      ? `Neuron ${cap.neuron + 1} pointed toward the right answer, so it learns to fire more for ink like this (yellow).`
+      : `Neuron ${cap.neuron + 1} pointed toward a wrong answer, so it learns to fire less for ink like this (blue).`;
+  } else {
+    $('#pkNeuron').textContent = 'No neuron fired';
+    $('#pkNudgeText').textContent = 'None of its neurons reacted to this example yet, so only its answer settings move.';
+  }
+  $('#pkVoteText').textContent = right
+    ? `It also turns its “${cap.y}” vote up a little.`
+    : `It also turns its “${cap.y}” vote up and its “${cap.guess}” vote down.`;
+  setMiniBars($('#pkAfter'), cap.after, cap.y, argmax(cap.after), cap.before);
+  const diff = cap.after[cap.y] - cap.before[cap.y];
+  $('#pkAfterText').innerHTML = `Chance on “${cap.y}”: <b>${pct(cap.before[cap.y])}</b> before, <b>${pct(cap.after[cap.y])}</b> after.`;
+  $('#pkLossA').textContent = cap.lossAfter.toFixed(2);
+  $('#pkAfterNote').textContent = Math.abs(diff) < 0.005
+    ? 'It was already sure, so the change is tiny. Most learning now happens on the examples it still misses.'
+    : diff > 0
+      ? 'One small step better. Thousands of these steps add up to learning.'
+      : 'Slightly worse this time. The other 31 examples in the same step pulled the settings their way.';
+
+  revealTimers.forEach(clearTimeout); revealTimers = [];
+  const stages = document.querySelectorAll('.stage');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { stages.forEach(s => s.classList.add('on')); return; }
+  stages.forEach(s => s.classList.remove('on'));
+  const gap = slowReveal ? 700 : 260;
+  stages.forEach((s, i) => revealTimers.push(setTimeout(() => s.classList.add('on'), 40 + i * gap)));
+}
+function stepOnce() {
+  if (!dataReady || training) return;
+  oneBatch(true, true);
+  if (steps % 40 !== 0) recordAcc();
+  renderTrainUI(true); updateButtons();
+}
+
+/* ---- Report card per digit ---- */
+const reportEls = [];
+function buildReport() {
+  const wrap = $('#report');
+  for (let d = 0; d < OUT; d++) {
+    const el = document.createElement('div'); el.className = 'rc';
+    el.innerHTML = `<span class="rc-d">${d}</span><span class="rc-p">–</span><span class="rc-track"><span class="rc-fill"></span></span><span class="rc-note">Not tested yet</span>`;
+    wrap.appendChild(el); reportEls.push(el);
+  }
+}
+function updateReport() {
+  if (!conf) return;
+  for (let d = 0; d < OUT; d++) {
+    const row = conf[d]; let tot = 0; for (let j = 0; j < OUT; j++) tot += row[j];
+    const acc = tot ? row[d] / tot : 0;
+    let mix = -1, mv = 0; for (let j = 0; j < OUT; j++) if (j !== d && row[j] > mv) { mv = row[j]; mix = j; }
+    const el = reportEls[d];
+    el.querySelector('.rc-p').textContent = Math.round(acc * 100) + '%';
+    el.querySelector('.rc-fill').style.width = (acc * 100) + '%';
+    el.classList.toggle('weak', acc < 0.8);
+    el.querySelector('.rc-note').textContent = acc >= 0.97 ? 'Solid' : mix >= 0 ? `Mixes it up with ${mix}` : '';
+  }
+}
+
+function oneBatch(capture, slowReveal) {
+  for (let b = 0; b < BATCH; b++) {
+    if (permPos >= N_TRAIN) { permPos = 0; round++; shuffle(perm); }
+    const idx = perm[permPos++];
+    bxs[b] = vecTrain(idx); bys[b] = trainY[idx];
+  }
+  let cap = null;
+  if (capture) { const pick = pickFromBatch(); cap = makeCapture(bxs[pick], bys[pick]); }
+  const L = net.trainBatch(bxs, bys);
+  if (cap) { finishCapture(cap); showCapture(cap, slowReveal); lastCapture = performance.now(); }
+  steps++; seen += BATCH;
+  lossEma = lossEma == null ? L : lossEma * 0.9 + L * 0.1;
+  if (steps % 5 === 0) lossHist.push(lossEma);
+  if (steps % 40 === 0) recordAcc();
+}
+
+function trainLoop() {
+  if (!training) return;
+  const slow = $('#slow').checked;
+  frame++;
+  const batches = slow ? (frame % 3 === 0 ? 1 : 0) : 3;
+  if (!batches) { if (training) requestAnimationFrame(trainLoop); return; }
+  const wantCap = performance.now() - lastCapture > (slow ? 4200 : 2600);
+  for (let b = 0; b < batches; b++) {
+    oneBatch(b === 0 && wantCap, slow);
+    if (round >= maxRounds) { stopTraining(true); break; }
+  }
+  renderTrainUI();
+  if (strokes.length && performance.now() - lastLivePredict > 200) { lastLivePredict = performance.now(); predict(); }
+  if (training) requestAnimationFrame(trainLoop);
+}
+function startTraining() {
+  if (!dataReady) return;
+  if (round >= maxRounds) maxRounds = round + 4;
+  if (steps === 0) shuffle(perm);
+  training = true; updateButtons();
+  requestAnimationFrame(trainLoop);
+}
+function stopTraining(finished) {
+  training = false;
+  if (finished) { recordAcc(); renderTrainUI(true); }
+  updateButtons();
+}
+function resetTraining() {
+  training = false;
+  net = new Net(); round = 0; permPos = 0; steps = 0; seen = 0; lossEma = null; maxRounds = ROUNDS;
+  lossHist = []; accHist = [evaluate()];
+  lastCap = null; $('#peekEmpty').hidden = false;
+  revealTimers.forEach(clearTimeout); document.querySelectorAll('.stage').forEach(s => s.classList.remove('on'));
+  updateQuiz(); updateReport(); renderTrainUI(true); updateButtons(); predict();
+}
+function updateButtons() {
+  const b = $('#trainBtn');
+  b.disabled = !dataReady;
+  if (training) b.textContent = 'Pause';
+  else if (round >= maxRounds) b.textContent = 'Practice 4 more rounds';
+  else if (steps > 0) b.textContent = 'Keep training';
+  else b.textContent = 'Start training';
+  $('#resetBtn').disabled = !dataReady || steps === 0;
+  $('#stepBtn').disabled = !dataReady || training;
+  $('#untrainedNote').hidden = steps > 0;
+}
+function renderTrainUI(force) {
+  const acc = accHist.length ? accHist[accHist.length - 1] : 0;
+  $('#score').textContent = accHist.length ? Math.round(acc * 100) + '%' : '–';
+  const done = round >= maxRounds;
+  $('#rounds').textContent = done ? `All ${maxRounds} rounds done` : `Round ${round + 1} of ${maxRounds}`;
+  $('#roundBar').style.width = (done ? 100 : 100 * permPos / N_TRAIN) + '%';
+  $('#roundDetail').textContent = done ? `It has seen each example ${round} times.` : `${fmtInt(permPos)} of ${fmtInt(N_TRAIN)} examples so far this round`;
+  $('#steps').textContent = fmtInt(steps);
+  $('#seen').textContent = fmtInt(seen);
+  drawChart($('#accChart'), accHist.map(a => a * 100), { min: 0, max: 100, ticks: [0, 50, 100], fmt: t => t + '%', color: css('--ink'), fill: css('--hi') });
+  const lmax = Math.max(2.5, ...lossHist.slice(0, 5));
+  drawChart($('#lossChart'), lossHist, { min: 0, max: lmax, ticks: [0, 1, 2], fmt: t => t.toFixed(0), color: css('--neg') });
+  const now = performance.now();
+  if (force || now - lastWeightPaint > 150) { lastWeightPaint = now; paintNeurons(); }
+}
+
+function drawChart(cv, data, o) {
+  const [ctx, W, Hh] = sizeCanvas(cv);
+  ctx.clearRect(0, 0, W, Hh);
+  const padL = 40, padR = 10, padT = 10, padB = 22, pw = W - padL - padR, ph = Hh - padT - padB;
+  const Y = v => padT + ph * (1 - (Math.min(o.max, Math.max(o.min, v)) - o.min) / (o.max - o.min));
+  ctx.font = '13px "Atkinson Hyperlegible", system-ui, sans-serif';
+  ctx.fillStyle = css('--muted'); ctx.strokeStyle = css('--line'); ctx.lineWidth = 1;
+  for (const t of o.ticks) {
+    const y = Math.round(Y(t)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(o.fmt(t), padL - 8, y);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Practice time', padL, Hh - 4);
+  if (!data.length) return;
+  const n = Math.max(data.length - 1, 1), X = i => padL + pw * (i / n);
+  if (o.fill && data.length > 1) {
+    ctx.beginPath(); ctx.moveTo(X(0), Y(o.min));
+    data.forEach((v, i) => ctx.lineTo(X(i), Y(v)));
+    ctx.lineTo(X(data.length - 1), Y(o.min)); ctx.closePath();
+    ctx.globalAlpha = 0.5; ctx.fillStyle = o.fill; ctx.fill(); ctx.globalAlpha = 1;
+  }
+  ctx.beginPath();
+  data.forEach((v, i) => (i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))));
+  ctx.strokeStyle = o.color; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
+  const lx = X(data.length - 1), ly = Y(data[data.length - 1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI * 2); ctx.fillStyle = o.color; ctx.fill();
+}
+
+function buildNeurons() {
+  const wrap = $('#neurons');
+  for (let i = 0; i < H; i++) { const cv = mk28(); cv.setAttribute('aria-hidden', 'true'); wrap.appendChild(cv); neuronCvs.push(cv); }
+}
+function paintNeurons() {
+  const bg = hexToRgb(css('--tile')), pos = hexToRgb(css('--pos')), neg = hexToRgb(css('--neg'));
+  const W1 = net.W1;
+  for (let i = 0; i < H; i++) {
+    let mx = 1e-6;
+    for (let j = 0; j < IN; j++) { const a = Math.abs(W1[j * H + i]); if (a > mx) mx = a; }
+    const ctx = neuronCvs[i].getContext('2d'), img = ctx.createImageData(28, 28), d = img.data;
+    for (let j = 0; j < IN; j++) {
+      const t = W1[j * H + i] / mx, c = t > 0 ? pos : neg, a = Math.min(1, Math.abs(t) * 1.3);
+      d[j * 4] = bg[0] + (c[0] - bg[0]) * a;
+      d[j * 4 + 1] = bg[1] + (c[1] - bg[1]) * a;
+      d[j * 4 + 2] = bg[2] + (c[2] - bg[2]) * a;
+      d[j * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+}
+
+function buildQuiz() {
+  const wrap = $('#quiz');
+  for (let q = 0; q < QUIZ_COUNT; q++) {
+    const idx = (q * 53 + 7) % N_TEST;
+    const el = document.createElement('div'); el.className = 'q';
+    const cv = mk28(); const s = document.createElement('span'); s.textContent = '…';
+    el.append(cv, s); wrap.appendChild(el);
+    quiz.push({ idx, el, cv, s });
+  }
+}
+function updateQuiz() {
+  const h = new Float32Array(H), p = new Float32Array(OUT);
+  for (const q of quiz) {
+    net.forward(vecTest(q.idx), h, p);
+    let am = 0; for (let j = 1; j < OUT; j++) if (p[j] > p[am]) am = j;
+    const ok = am === testY[q.idx];
+    q.el.className = 'q ' + (ok ? 'right' : 'wrong');
+    q.s.textContent = ok ? `${am} ✓` : `${am} ✗`;
+    q.el.setAttribute('aria-label', `Answer is ${testY[q.idx]}, model said ${am}`);
+  }
+}
+function paintQuizImages() {
+  const ink = hexToRgb(css('--ink'));
+  for (const q of quiz) paintVec(q.cv, vecTest(q.idx), ink);
+}
+
+/* ---------------- Section 3: drawing and testing ---------------- */
+const pad = $('#pad'); pad.width = pad.height = PAD;
+const padCtx = pad.getContext('2d', { willReadFrequently: true });
+const aug = document.createElement('canvas'); aug.width = aug.height = PAD;
+const augCtx = aug.getContext('2d', { willReadFrequently: true });
+let strokes = [], cur = null, predictQueued = false;
+let userX = [], userY = [];
+const padVec = new Float32Array(IN), hT = new Float32Array(H), pT = new Float32Array(OUT);
+let lastInput = null;
+
+function drawStrokes(ctx, color, lw, tf) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, PAD, PAD);
+  if (tf) {
+    ctx.translate(PAD / 2, PAD / 2); ctx.rotate(tf.rot); ctx.transform(1, 0, tf.skew, 1, 0, 0);
+    ctx.scale(tf.sx, tf.sy); ctx.translate(-PAD / 2, -PAD / 2);
+  }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = lw;
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  for (const s of strokes) {
+    if (s.length === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], lw / 2, 0, Math.PI * 2); ctx.fill(); continue; }
+    ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]);
+    for (let k = 1; k < s.length; k++) ctx.lineTo(s[k][0], s[k][1]);
+    ctx.stroke();
+  }
+}
+function redrawPad() { drawStrokes(padCtx, css('--ink'), PAD_LW); }
+function ptFromEvent(e) {
+  const r = pad.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width * PAD, (e.clientY - r.top) / r.height * PAD];
+}
+function schedulePredict() {
+  if (predictQueued) return;
+  predictQueued = true;
+  requestAnimationFrame(() => { predictQueued = false; predict(); });
+}
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  pad.setPointerCapture(e.pointerId);
+  cur = [ptFromEvent(e)]; strokes.push(cur);
+  redrawPad(); schedulePredict();
+});
+pad.addEventListener('pointermove', e => {
+  if (!cur) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of evs) cur.push(ptFromEvent(ev));
+  redrawPad(); schedulePredict();
+});
+const endStroke = () => { if (cur) { cur = null; predict(); } };
+pad.addEventListener('pointerup', endStroke);
+pad.addEventListener('pointercancel', endStroke);
+
+function clearPad() { strokes = []; cur = null; redrawPad(); predict(); }
+
+function predict() {
+  if (!strokes.length) {
+    lastInput = null;
+    $('#guessDigit').textContent = '?';
+    $('#guessSure').textContent = 'Draw a digit in the box to see its guess.';
+    updateBars(null); drawNet(null, null, null);
+    return;
+  }
+  drawStrokes(augCtx, '#000', PAD_LW);
+  const v = preprocess(aug, augCtx, padVec);
+  if (!v) return;
+  lastInput = v;
+  net.forward(v, hT, pT);
+  let am = 0; for (let j = 1; j < OUT; j++) if (pT[j] > pT[am]) am = j;
+  $('#guessDigit').textContent = am;
+  const pc = Math.round(pT[am] * 100);
+  $('#guessSure').textContent = pc >= 85 ? `It’s ${pc}% sure.` : pc >= 50 ? `It’s ${pc}% sure, leaning this way.` : `Only ${pc}% sure. It’s torn between a few answers.`;
+  updateBars(pT, am); drawNet(v, hT, pT);
+}
+
+function buildBars() {
+  const wrap = $('#bars');
+  for (let d = 0; d < OUT; d++) {
+    const row = document.createElement('div'); row.className = 'bar-row';
+    row.innerHTML = `<span class="bar-d">${d}</span><span class="bar-track"><span class="bar-fill"></span></span><span class="bar-p">0%</span>`;
+    wrap.appendChild(row);
+  }
+}
+function updateBars(p, am) {
+  const rows = $('#bars').children;
+  for (let d = 0; d < OUT; d++) {
+    const v = p ? p[d] : 0;
+    rows[d].classList.toggle('top', !!p && d === am);
+    rows[d].querySelector('.bar-fill').style.width = (v * 100).toFixed(1) + '%';
+    rows[d].querySelector('.bar-p').textContent = p ? Math.round(v * 100) + '%' : '';
+  }
+}
+
+const netImg = mk28();
+function drawNet(x, h, p) {
+  const cv = $('#net');
+  const [ctx, W, Hh] = sizeCanvas(cv);
+  ctx.clearRect(0, 0, W, Hh);
+  const ink = css('--ink'), muted = css('--muted'), hi = css('--hi'), pos = css('--pos'), neg = css('--neg'), line = css('--line'), tile = css('--tile');
+  const top = 34, bottom = Hh - 8, avail = bottom - top;
+  const narrow = W < 520;
+  if (W < 80 || avail < 120) return; // not laid out yet; it redraws once it has a size
+
+  const imgS = Math.min(avail * 0.62, W * 0.24), ix = 4, iy = top + (avail - imgS) / 2;
+  const cols = 4, rows = 16;
+  const hx0 = W * (narrow ? 0.4 : 0.38), hx1 = W * (narrow ? 0.56 : 0.52);
+  const hy0 = top + 6, hy1 = bottom - 6;
+  const dyH = (hy1 - hy0) / (rows - 1), dxH = (hx1 - hx0) / (cols - 1);
+  const rH = Math.max(2.5, Math.min(dyH * 0.36, 6.5));
+  const hp = [];
+  for (let i = 0; i < H; i++) hp.push([hx0 + Math.floor(i / rows) * dxH, hy0 + (i % rows) * dyH]);
+  const ox = W * (narrow ? 0.8 : 0.82), oy0 = top + 12, oy1 = bottom - 12, dyO = (oy1 - oy0) / 9;
+  const rO = Math.max(3, Math.min(dyO * 0.42, 14));
+
+  ctx.font = `700 ${narrow ? 12 : 14}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+  ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('What it sees', ix + imgS / 2, 16);
+  ctx.fillText('64 neurons', (hx0 + hx1) / 2, 16);
+  ctx.fillText('Its answer', ox + (narrow ? 10 : 20), 16);
+
+  let hmax = 1e-6;
+  if (h) for (let i = 0; i < H; i++) if (h[i] > hmax) hmax = h[i];
+
+  // pixels -> neurons
+  if (h) {
+    ctx.strokeStyle = pos; ctx.lineWidth = 1;
+    for (let i = 0; i < H; i++) {
+      const a = h[i] / hmax; if (a < 0.08) continue;
+      ctx.globalAlpha = a * 0.45;
+      ctx.beginPath(); ctx.moveTo(ix + imgS, iy + imgS * ((i % rows) + 0.5) / rows); ctx.lineTo(hp[i][0] - rH, hp[i][1]); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // neurons -> answers
+  if (h) {
+    let cmax = 1e-6;
+    for (let k = 0; k < OUT; k++) for (let i = 0; i < H; i++) { const c = Math.abs(net.W2[k * H + i] * h[i]); if (c > cmax) cmax = c; }
+    for (let k = 0; k < OUT; k++) {
+      const oy = oy0 + k * dyO;
+      for (let i = 0; i < H; i++) {
+        const c = net.W2[k * H + i] * h[i], rel = Math.abs(c) / cmax;
+        if (rel < 0.18) continue;
+        ctx.strokeStyle = c > 0 ? pos : neg; ctx.globalAlpha = 0.15 + rel * 0.7; ctx.lineWidth = 0.75 + rel * 2.5;
+        ctx.beginPath(); ctx.moveTo(hp[i][0] + rH, hp[i][1]); ctx.lineTo(ox - rO, oy); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  // input image
+  ctx.fillStyle = tile; ctx.fillRect(ix, iy, imgS, imgS);
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(ix + 0.5, iy + 0.5, imgS - 1, imgS - 1);
+  if (x) {
+    paintVec(netImg, x, hexToRgb(ink));
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(netImg, ix, iy, imgS, imgS); ctx.imageSmoothingEnabled = true;
+  } else {
+    ctx.fillStyle = muted; ctx.font = `${narrow ? 12 : 13}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+    ctx.fillText('28 × 28', ix + imgS / 2, iy + imgS / 2 + 4);
+  }
+  // neuron dots
+  for (let i = 0; i < H; i++) {
+    ctx.beginPath(); ctx.arc(hp[i][0], hp[i][1], rH, 0, Math.PI * 2);
+    ctx.fillStyle = tile; ctx.fill();
+    if (h && h[i] > 0) { ctx.globalAlpha = Math.min(1, 0.15 + h[i] / hmax); ctx.fillStyle = hi; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.stroke();
+  }
+  // answer nodes
+  let am = -1;
+  if (p) { am = 0; for (let j = 1; j < OUT; j++) if (p[j] > p[am]) am = j; }
+  for (let k = 0; k < OUT; k++) {
+    const oy = oy0 + k * dyO;
+    ctx.beginPath(); ctx.arc(ox, oy, rO, 0, Math.PI * 2);
+    ctx.fillStyle = tile; ctx.fill();
+    if (p) { ctx.globalAlpha = Math.min(1, p[k] * 1.2); ctx.fillStyle = hi; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = k === am ? ink : line; ctx.lineWidth = k === am ? 2 : 1; ctx.stroke();
+    ctx.fillStyle = k === am ? css('--on-hi') : ink;
+    if (k !== am && p && p[k] > 0.6) ctx.fillStyle = css('--on-hi');
+    ctx.font = `800 ${Math.round(rO * 1.15)}px "Bricolage Grotesque", system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(k), ox, oy + 1);
+    if (p) {
+      ctx.textAlign = 'left'; ctx.fillStyle = k === am ? ink : muted;
+      ctx.font = `${k === am ? 700 : 400} ${narrow ? 12 : 13}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+      ctx.fillText(Math.round(p[k] * 100) + '%', ox + rO + 6, oy + 1);
+    }
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+function teach(label) {
+  if (!strokes.length) { toast('Draw a digit first, then tap the digit you meant.'); return; }
+  for (let n = 0; n < 30; n++) {
+    const tf = { rot: rand(-0.2, 0.2), skew: rand(-0.2, 0.2), sx: rand(0.85, 1.12), sy: rand(0.85, 1.12) };
+    drawStrokes(augCtx, '#000', PAD_LW * rand(0.75, 1.3), tf);
+    const v = preprocess(aug, augCtx, null);
+    if (v) { userX.push(v); userY.push(label); }
+  }
+  if (userX.length > 400) { userX = userX.slice(-400); userY = userY.slice(-400); }
+  const xs = [], ys = [];
+  for (let it = 0; it < 40; it++) {
+    xs.length = 0; ys.length = 0;
+    for (let b = 0; b < 12; b++) { const u = (Math.random() * userX.length) | 0; xs.push(userX[u]); ys.push(userY[u]); }
+    for (let b = 0; b < 20; b++) { const t = (Math.random() * N_TRAIN) | 0; xs.push(vecTrain(t)); ys.push(trainY[t]); }
+    net.trainBatch(xs, ys); steps++; seen += xs.length;
+  }
+  if (dataReady) recordAcc();
+  renderTrainUI(true); updateButtons(); predict();
+  toast(`It practiced on 30 slightly varied copies of your ${label}.`);
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+/* ---------------- Wiring ---------------- */
+function onDataReady() {
+  dataReady = true;
+  accHist = [evaluate()];
+  paintQuizImages(); updateQuiz(); renderTrainUI(true); updateButtons();
+}
+function repaintAll() {
+  const ink = hexToRgb(css('--ink'));
+  for (let i = 0; i < Math.min(genCount, TILE_COUNT); i++) paintVec(tiles[i].cv, vecTrain(i), ink);
+  if (dataReady) paintQuizImages();
+  drawZoom(); renderTrainUI(true); redrawPad();
+  if (lastCap) { paintVec($('#pkImg'), lastCap.x, ink); if (lastCap.neuron >= 0) { paintSigned($('#pkPattern'), lastCap.pattern); paintSigned($('#pkChange'), lastCap.change); } }
+  if (lastInput) drawNet(lastInput, hT, pT); else drawNet(null, null, null);
+}
+
+function init() {
+  buildTiles(); buildNeurons(); buildQuiz(); buildBars(); buildReport();
+  buildMiniBars($('#pkBefore')); buildMiniBars($('#pkAfter'));
+  const digits = $('#digitBtns');
+  for (let d = 0; d < 10; d++) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = d;
+    b.setAttribute('aria-label', `Teach it this is a ${d}`);
+    b.addEventListener('click', () => teach(d));
+    digits.appendChild(b);
+  }
+  $('#trainBtn').addEventListener('click', () => (training ? stopTraining(false) : startTraining()));
+  $('#resetBtn').addEventListener('click', resetTraining);
+  $('#stepBtn').addEventListener('click', stepOnce);
+  $('#clearBtn').addEventListener('click', clearPad);
+  const z = $('#zoom');
+  z.addEventListener('pointermove', zoomHover);
+  z.addEventListener('pointerdown', zoomHover);
+  z.addEventListener('pointerleave', () => { hoverCell = null; $('#zoomRead').textContent = 'Point at a square to see its number.'; drawZoom(); });
+  window.addEventListener('resize', repaintAll);
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => requestAnimationFrame(repaintAll)); } catch (e) {}
+  try { paintNeurons(); renderTrainUI(true); updateButtons(); predict(); } catch (e) { console.warn(e); }
+  try { new ResizeObserver(() => { try { repaintAll(); } catch (e) {} }).observe($('#net')); } catch (e) {}
+  loadFonts().catch(() => {}).then(() => {
+    $('#genStatus').textContent = 'Writing examples…';
+    requestAnimationFrame(genChunk);
+  });
+}
+init();
+})();
+
+</script>
+</body>
+</html>
